@@ -23,14 +23,25 @@ import {
 } from "@/components/ui/breadcrumb";
 import { useAuth } from "@/components/auth/auth-context";
 import { AuthDialog } from "@/components/auth/auth-dialog";
+import { UserSettingsDialog } from "@/components/ui/user-settings-dialog";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { User, BarChart3, CreditCard, LogOut, ChevronDown } from "lucide-react";
 
 export const Assistant = () => {
   const { user, logout } = useAuth();
   const [showAuthDialog, setShowAuthDialog] = useState(false);
   const [authDialogTab, setAuthDialogTab] = useState<'login' | 'register'>('login');
   const [pendingMessage, setPendingMessage] = useState('');
+  const [showUserSettings, setShowUserSettings] = useState(false);
+  const [userSettingsTab, setUserSettingsTab] = useState<'profile' | 'usage' | 'billing'>('profile');
 
   const runtime = useChatRuntime({
     transport: new AssistantChatTransport({
@@ -41,6 +52,11 @@ export const Assistant = () => {
   const handleAuthRequired = () => {
     setAuthDialogTab('login');
     setShowAuthDialog(true);
+  };
+
+  const handleUserMenuClick = (tab: 'profile' | 'usage' | 'billing') => {
+    setUserSettingsTab(tab);
+    setShowUserSettings(true);
   };
 
   // Submit pending message after authentication
@@ -67,9 +83,9 @@ export const Assistant = () => {
             <SidebarInset>
               <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
                 <SidebarTrigger />
-                <Separator orientation="vertical" className="mr-2 h-4" />
+                {/* <Separator orientation="vertical" className="mr-2 h-4" /> */}
                 <Breadcrumb>
-                  <BreadcrumbList>
+                  {/* <BreadcrumbList>
                     <BreadcrumbItem className="hidden md:block">
                       <BreadcrumbLink
                         href="https://www.assistant-ui.com/docs/getting-started"
@@ -83,34 +99,50 @@ export const Assistant = () => {
                     <BreadcrumbItem>
                       <BreadcrumbPage>Chat</BreadcrumbPage>
                     </BreadcrumbItem>
-                  </BreadcrumbList>
+                  </BreadcrumbList> */}
                 </Breadcrumb>
                 
                 {/* Auth Section - Right side */}
                 <div className="ml-auto">
                   {user ? (
-                    // User is logged in - show user info and logout
-                    <div className="flex items-center space-x-4 bg-white rounded-lg px-4 py-2">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
-                          <span className="text-white text-sm font-medium">
-                            {user.username.charAt(0).toUpperCase()}
-                          </span>
-                        </div>
-                        <div className="hidden sm:block">
-                          <p className="text-sm font-medium text-gray-900">{user.username}</p>
-                          <p className="text-xs text-gray-500">{user.email}</p>
-                        </div>
-                      </div>
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={logout}
-                        className="text-xs"
-                      >
-                        退出
-                      </Button>
-                    </div>
+                    // User is logged in - show user dropdown menu
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" className="flex items-center space-x-3 px-4 py-2 hover:bg-muted">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-8 h-8 bg-black rounded-full flex items-center justify-center">
+                              <span className="text-white text-sm font-medium">
+                                {user.username.charAt(0).toUpperCase()}
+                              </span>
+                            </div>
+                            <div className="hidden sm:block text-left">
+                              <p className="text-sm font-medium text-gray-900">{user.username}</p>
+                              <p className="text-xs text-gray-500">{user.email}</p>
+                            </div>
+                          </div>
+                          <ChevronDown className="h-4 w-4 text-gray-500" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-56" align="end">
+                        <DropdownMenuItem onClick={() => handleUserMenuClick('profile')}>
+                          <User className="mr-2 h-4 w-4" />
+                          <span>Profile</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleUserMenuClick('usage')}>
+                          <BarChart3 className="mr-2 h-4 w-4" />
+                          <span>Usage</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleUserMenuClick('billing')}>
+                          <CreditCard className="mr-2 h-4 w-4" />
+                          <span>Payment Channel</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={logout}>
+                          <LogOut className="mr-2 h-4 w-4" />
+                          <span>Logout</span>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   ) : (
                     // User not logged in - show login button
                     <Button 
@@ -120,7 +152,7 @@ export const Assistant = () => {
                       }}
                       size="sm"
                     >
-                      登录
+                      Sign in
                     </Button>
                   )}
                 </div>
@@ -142,6 +174,13 @@ export const Assistant = () => {
         open={showAuthDialog} 
         onOpenChange={setShowAuthDialog}
         defaultTab={authDialogTab}
+      />
+      
+      {/* User Settings Dialog */}
+      <UserSettingsDialog
+        open={showUserSettings}
+        onOpenChange={setShowUserSettings}
+        defaultTab={userSettingsTab}
       />
     </>
   );
