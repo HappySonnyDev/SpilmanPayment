@@ -24,7 +24,7 @@ export function ThreadListSidebar({
             <SidebarMenuItem>
               <SidebarMenuButton size="lg" asChild>
                 <Link
-                  href="https://assistant-ui.com"
+                  href="https://en.bitcoin.it/wiki/Payment_channels#Spillman-style_payment_channels"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -33,7 +33,7 @@ export function ThreadListSidebar({
                   </div>
                   <div className="aui-sidebar-header-heading mr-6 flex flex-col gap-0.5 leading-none">
                     <span className="aui-sidebar-header-title font-semibold">
-                      assistant-ui
+                      Spilman Payment
                     </span>
                   </div>
                 </Link>
