@@ -8,10 +8,18 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useUserInfo } from "@/lib/user-info-context";
 import { ccc } from "@ckb-ccc/core";
 import { DEVNET_SCRIPTS } from "@/lib/ckb";
 import { executePayNow } from "@/lib/payment-utils";
+import { ChevronDown } from "lucide-react";
+
 
 interface PaymentChannel {
   id: number;
@@ -20,6 +28,7 @@ interface PaymentChannel {
   durationDays: number;
   status: number;
   statusText: string;
+  isDefault: boolean;
   createdAt: string;
   updatedAt: string;
   // Raw database fields for data extraction
@@ -165,32 +174,65 @@ export const PaymentChannelSettings: React.FC = () => {
 
   const handleChannelAction = async (channelId: string, action: 'activate' | 'close') => {
     try {
+
+    //   setActionLoading(channelId);
+      
+    //   const response = await fetch('/api/channel/update', {
+    //     method: 'POST',
+    //     headers: {
+    //       'Content-Type': 'application/json',
+    //     },
+    //     body: JSON.stringify({
+    //       channelId,
+    //       action,
+    //     }),
+    //   });
+      
+    //   if (!response.ok) {
+    //     const errorData = await response.json();
+    //     throw new Error(errorData.error || `Failed to ${action} channel`);
+    //   }
+      
+    //   const result = await response.json();
+    //   alert(`Channel ${action}d successfully!`);
+      
+    //   // Refresh the channels list
+    //   await fetchPaymentChannels();
+    } catch (error) {
+    //   console.error(`Error ${action}ing channel:`, error);
+    //   alert(`Failed to ${action} channel: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+    //   setActionLoading(null);
+    }
+  };
+
+  const handleSetDefault = async (channelId: string) => {
+    try {
       setActionLoading(channelId);
       
-      const response = await fetch('/api/channel/update', {
+      const response = await fetch('/api/channel/set-default', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           channelId,
-          action,
         }),
       });
       
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || `Failed to ${action} channel`);
+        throw new Error(errorData.error || 'Failed to set as default');
       }
       
       const result = await response.json();
-      alert(`Channel ${action}d successfully!`);
+      alert(`Channel set as default successfully!`);
       
       // Refresh the channels list
       await fetchPaymentChannels();
     } catch (error) {
-      console.error(`Error ${action}ing channel:`, error);
-      alert(`Failed to ${action} channel: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('Error setting default channel:', error);
+      alert('Failed to set as default: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
       setActionLoading(null);
     }
@@ -262,16 +304,39 @@ export const PaymentChannelSettings: React.FC = () => {
           {isLoading ? 'Processing...' : 'Pay Now'}
         </Button>
       );
-    } else if (channel.status === 2) { // Active
+    } else if (channel.status === 2) { // Active - Show Manage dropdown
       return (
-        <Button
-          onClick={() => handleChannelAction(channel.channelId, 'close')}
-          disabled={isLoading}
-          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm"
-          size="sm"
-        >
-          {isLoading ? 'Closing...' : 'Close'}
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              disabled={isLoading}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm"
+              size="sm"
+            >
+              {isLoading ? 'Processing...' : (
+                <>
+                  Manage
+                  <ChevronDown className="ml-1 h-3 w-3" />
+                </>
+              )}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onClick={() => handleSetDefault(channel.channelId)}
+              disabled={isLoading || channel.isDefault}
+            >
+              {channel.isDefault ? '✓ Already Default' : 'Set as Default'}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => handleChannelAction(channel.channelId, 'close')}
+              disabled={isLoading}
+              className="text-red-600 focus:text-red-600"
+            >
+              Close Channel
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       );
     } else { // Invalid
       return (
@@ -288,13 +353,13 @@ export const PaymentChannelSettings: React.FC = () => {
       <h3 className="mb-6 text-lg font-semibold">Payment Channels</h3>
       
       {isLoading ? (
-        // <div className="rounded-lg border border-gray-100/30 bg-slate-50/50 shadow-sm dark:border-slate-700/40 dark:bg-slate-800">
+        <div className="rounded-lg border border-gray-100/30 bg-slate-50/50 shadow-sm dark:border-slate-700/40 dark:bg-slate-800">
           <div className="p-6 text-center">
             <p className="text-sm text-slate-600 dark:text-slate-400">
               Loading payment channels...
             </p>
           </div>
-        // </div>
+        </div>
       ) : channels.length === 0 ? (
         <div className="rounded-lg border border-gray-100/30 bg-slate-50/50 shadow-sm dark:border-slate-700/40 dark:bg-slate-800">
           <div className="p-6 text-center">
@@ -306,7 +371,11 @@ export const PaymentChannelSettings: React.FC = () => {
       ) : (
         <div className="space-y-4">
           {channels.map((channel) => (
-            <div key={channel.id} className="rounded-lg border border-gray-100/30 bg-slate-50/50 shadow-sm dark:border-slate-700/40 dark:bg-slate-800">
+            <div key={channel.id} className={`rounded-lg border shadow-sm ${
+              channel.isDefault 
+                ? 'border-blue-200 bg-blue-50/50 dark:border-blue-700/40 dark:bg-blue-900/20' 
+                : 'border-gray-100/30 bg-slate-50/50 dark:border-slate-700/40 dark:bg-slate-800'
+            }`}>
               {/* Accordion Header */}
               <div 
                 className="p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors"
@@ -333,6 +402,11 @@ export const PaymentChannelSettings: React.FC = () => {
                     <div>
                       {getStatusBadge(channel.status, channel.statusText)}
                     </div>
+                    {channel.isDefault && (
+                      <div className="inline-flex rounded-full px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                        Default
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center space-x-3">
                     {getActionButton(channel)}

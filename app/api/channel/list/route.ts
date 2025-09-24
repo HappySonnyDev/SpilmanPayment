@@ -33,6 +33,8 @@ export async function GET(request: NextRequest) {
       durationDays: channel.duration_days,
       status: channel.status,
       statusText: getStatusText(channel.status),
+      isDefault: Boolean(channel.is_default), // Convert SQLite integer (0/1) to boolean
+      consumedTokens: channel.consumed_tokens || 0,
       createdAt: channel.created_at,
       updatedAt: channel.updated_at,
       // Include raw database fields for frontend processing

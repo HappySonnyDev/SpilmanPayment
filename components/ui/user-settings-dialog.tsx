@@ -60,8 +60,8 @@ export const UserSettingsDialog: React.FC<UserSettingsDialogProps> = ({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="h-[600px] w-[1000px] max-w-[1000px] overflow-hidden p-0"
-        style={{ width: "1000px", maxWidth: "1000px" }}
+        className="h-[600px] w-[1200px] max-w-[1200px] overflow-hidden p-0"
+        style={{ width: "1200px", maxWidth: "1200px" }}
       >
         <div className="flex h-full w-full">
           {/* Left Sidebar */}

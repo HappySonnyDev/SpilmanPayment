@@ -167,6 +167,21 @@ export async function POST(request: NextRequest) {
       console.error('Error invalidating inactive channels:', invalidateError);
     }
 
+    // Auto-assign as default channel if user has no other active channels
+    let isNewDefault = false;
+    try {
+      const existingDefault = paymentChannelRepo.getUserDefaultChannel(user.id);
+      if (!existingDefault) {
+        // No existing default channel, set this one as default
+        paymentChannelRepo.setChannelAsDefault(channelId, user.id);
+        isNewDefault = true;
+        console.log(`Set channel ${channelId} as default for user ${user.id}`);
+      }
+    } catch (defaultError) {
+      // Log error but don't fail the main operation
+      console.error('Error setting default channel:', defaultError);
+    }
+
     // Return success response
     return NextResponse.json({
       success: true,
@@ -175,6 +190,7 @@ export async function POST(request: NextRequest) {
         channelId: updatedChannel.channel_id,
         status: updatedChannel.status,
         statusText: getStatusText(updatedChannel.status),
+        isDefault: isNewDefault,
         txHash: txHash,
         verifiedAt: new Date().toISOString(),
       }
