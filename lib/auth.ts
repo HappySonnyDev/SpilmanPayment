@@ -4,6 +4,7 @@ import { SignJWT, jwtVerify } from 'jose';
 import { cookies } from 'next/headers';
 import { NextRequest } from 'next/server';
 import { UserRepository, SessionRepository, User } from './database';
+import { secp256k1 } from '@noble/curves/secp256k1';
 
 // JWT secret - in production, use a strong secret from environment variables
 const JWT_SECRET = new TextEncoder().encode(
@@ -25,6 +26,25 @@ export class AuthService {
   constructor() {
     this.userRepo = new UserRepository();
     this.sessionRepo = new SessionRepository();
+  }
+
+  // Generate public key from server private key
+  private generatePublicKey(): string {
+    const privateKey = process.env.SELLER_PRIVATE_KEY;
+    if (!privateKey) {
+      throw new Error('SELLER_PRIVATE_KEY not found in environment variables');
+    }
+    
+    // Remove 0x prefix if present
+    const cleanPrivateKey = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey;
+    const privKeyBuffer = Buffer.from(cleanPrivateKey, 'hex');
+    const publicKey = secp256k1.getPublicKey(privKeyBuffer, false);
+    return Buffer.from(publicKey).toString('hex');
+  }
+
+  // Public method to get the public key
+  getPublicKey(): string {
+    return this.generatePublicKey();
   }
 
   // Generate session ID

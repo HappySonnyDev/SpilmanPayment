@@ -13,13 +13,17 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Return user data (excluding password hash)
+    // Generate public key from server private key
+    const publicKey = authService.getPublicKey();
+
+    // Return user data (excluding password hash) with public key
     const userData = {
       id: user.id,
       email: user.email,
       username: user.username,
       created_at: user.created_at,
-      is_active: user.is_active
+      is_active: user.is_active,
+      public_key: publicKey
     };
 
     return NextResponse.json({
