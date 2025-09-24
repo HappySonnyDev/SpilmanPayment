@@ -1,220 +1,470 @@
 "use client";
-"use client";
 
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { useUserInfo } from "@/lib/user-info-context";
+import { ccc } from "@ckb-ccc/core";
 import { DEVNET_SCRIPTS } from "@/lib/ckb";
-import { PublicKeyDisplay } from "../public-key-display";
+import { executePayNow } from "@/lib/payment-utils";
+
+interface PaymentChannel {
+  id: number;
+  channelId: string;
+  amount: number;
+  durationDays: number;
+  status: number;
+  statusText: string;
+  createdAt: string;
+  updatedAt: string;
+  // Raw database fields for data extraction
+  sellerSignature: string | null;
+  refundTxData: string | null;
+  fundingTxData: string | null;
+}
 
 export const PaymentChannelSettings: React.FC = () => {
-  const [privateKey, setPrivateKey] = useState("");
-  const [ckbAddress, setCkbAddress] = useState("");
-  const [balance, setBalance] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [showInputs, setShowInputs] = useState(true);
+  const [channels, setChannels] = useState<PaymentChannel[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [expandedChannels, setExpandedChannels] = useState<Set<string>>(new Set());
+  const { userInfo } = useUserInfo();
 
-  useEffect(() => {
-    // Check if private key exists in localStorage
-    const storedPrivateKey = localStorage.getItem("private_key");
-    if (storedPrivateKey) {
-      setPrivateKey(storedPrivateKey);
-      setShowInputs(false);
-      generateCkbAddress(storedPrivateKey);
+  // Extract transaction information from refund transaction data
+  const extractRefundTxInfo = (refundTxData: string | null) => {
+    if (!refundTxData) {
+      return {
+        inputTxHash: "N/A",
+        buyerAddress: userInfo?.publicKey || "N/A",
+      };
     }
+
+    try {
+      const refundTx = JSON.parse(refundTxData);
+      
+      // Get input transaction hash from first input
+      const inputTxHash = refundTx.inputs?.[0]?.previousOutput?.txHash || "N/A";
+      
+      // Get buyer address from first output lock script
+      let buyerAddress = "N/A";
+      if (refundTx.outputs?.[0]?.lock) {
+        try {
+          const lockScript = refundTx.outputs[0].lock;
+          // Create a mock client for address conversion
+          const cccClient = new ccc.ClientPublicTestnet({
+            url: "http://localhost:28114",
+            scripts: DEVNET_SCRIPTS,
+          });
+          const address = ccc.Address.fromScript(
+            lockScript as ccc.Script,
+            cccClient,
+          ).toString();
+          buyerAddress = address;
+        } catch (addressError) {
+          console.error(
+            "Error converting lock script to address:",
+            addressError,
+          );
+          // Fallback to lock args or user public key
+          buyerAddress =
+            refundTx.outputs[0].lock.args || userInfo?.publicKey || "N/A";
+        }
+      } else {
+        buyerAddress = userInfo?.publicKey || "N/A";
+      }
+
+      return {
+        inputTxHash,
+        buyerAddress,
+      };
+    } catch (error) {
+      console.error("Error parsing refund transaction:", error);
+      return {
+        inputTxHash: "N/A",
+        buyerAddress: userInfo?.publicKey || "N/A",
+      };
+    }
+  };
+
+  // Fetch payment channels on component mount
+  useEffect(() => {
+    fetchPaymentChannels();
   }, []);
 
-  const generateCkbAddress = async (privKey: string) => {
+  const fetchPaymentChannels = async () => {
     try {
       setIsLoading(true);
-
-      // Import CKB-CCC dynamically to avoid SSR issues
-      const { ccc } = await import("@ckb-ccc/core");
-
-      // Build client and signer
-      const client = new ccc.ClientPublicTestnet({
-        url: "http://localhost:28114",
-        scripts: DEVNET_SCRIPTS,
-      });
-      const signer = new ccc.SignerCkbPrivateKey(client, privKey);
-
-      // Get recommended address
-      const address = await signer.getRecommendedAddress();
-      setCkbAddress(address);
-
-      // Get balance
-      const addressObj = await ccc.Address.fromString(address, client);
-      const script = addressObj.script;
-      const balanceBI = await client.getBalance([script]);
-      const balanceInCKB = ccc.fixedPointToString(balanceBI);
-      setBalance(balanceInCKB);
+      const response = await fetch('/api/channel/list');
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch payment channels');
+      }
+      
+      const result = await response.json();
+      setChannels(result.data.channels);
     } catch (error) {
-      console.error("Error generating CKB address:", error);
-      // If error occurs, show inputs again
-      setShowInputs(true);
-      localStorage.removeItem("private_key");
+      console.error('Error fetching payment channels:', error);
+      alert('Failed to load payment channels');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleConnectCkb = async () => {
-    if (!privateKey.trim()) {
-      alert("Please enter a private key");
-      return;
+  const toggleChannelExpansion = (channelId: string) => {
+    const newExpanded = new Set(expandedChannels);
+    if (newExpanded.has(channelId)) {
+      newExpanded.delete(channelId);
+    } else {
+      newExpanded.add(channelId);
     }
+    setExpandedChannels(newExpanded);
+  };
 
+  const handlePayNow = async (channel: PaymentChannel) => {
     try {
-      // Store private key in localStorage
-      localStorage.setItem("private_key", privateKey);
-      setShowInputs(false);
+      setActionLoading(channel.channelId);
+      
+      // Check if funding transaction data exists
+      if (!channel.fundingTxData) {
+        alert("No funding transaction data available for this channel.");
+        return;
+      }
 
-      // Generate CKB address
-      await generateCkbAddress(privateKey);
+      // Use the shared payment utility
+      const result = await executePayNow({
+        channelId: channel.channelId,
+        fundingTx: JSON.parse(channel.fundingTxData),
+        amount: channel.amount,
+      });
+
+      if (result.success) {
+        alert(
+          `Payment successful and channel activated!\n` +
+          `Transaction Hash: ${result.txHash}\n` +
+          `Channel Status: ${result.channelStatus}`
+        );
+        
+        // Refresh the channels list to show updated status
+        await fetchPaymentChannels();
+      } else {
+        alert(result.error);
+      }
+      
     } catch (error) {
-      console.error("Error connecting CKB:", error);
-      alert("Failed to connect CKB. Please check your private key.");
+      console.error('Payment error:', error);
+      alert('Payment failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleChannelAction = async (channelId: string, action: 'activate' | 'close') => {
+    try {
+      setActionLoading(channelId);
+      
+      const response = await fetch('/api/channel/update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          channelId,
+          action,
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to ${action} channel`);
+      }
+      
+      const result = await response.json();
+      alert(`Channel ${action}d successfully!`);
+      
+      // Refresh the channels list
+      await fetchPaymentChannels();
+    } catch (error) {
+      console.error(`Error ${action}ing channel:`, error);
+      alert(`Failed to ${action} channel: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const getStatusBadge = (status: number, statusText: string) => {
+    const baseClasses = "inline-flex rounded-full px-3 py-1 text-xs font-medium";
+    
+    switch (status) {
+      case 1: // Inactive
+        return (
+          <span className={`${baseClasses} bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400`}>
+            {statusText}
+          </span>
+        );
+      case 2: // Active
+        return (
+          <span className={`${baseClasses} bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400`}>
+            {statusText}
+          </span>
+        );
+      case 3: // Invalid
+        return (
+          <span className={`${baseClasses} bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400`}>
+            {statusText}
+          </span>
+        );
+      default:
+        return (
+          <span className={`${baseClasses} bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400`}>
+            {statusText}
+          </span>
+        );
+    }
+  };
+
+  // Helper function to calculate period range
+  const getPeriodRange = (createdAt: string, durationDays: number) => {
+    const startDate = new Date(createdAt);
+    const endDate = new Date(startDate.getTime() + (durationDays * 24 * 60 * 60 * 1000));
+    
+    const formatDateTime = (date: Date) => {
+      return date.toLocaleString('en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+        timeZone: 'Asia/Shanghai' // UTC+8
+      });
+    };
+    
+    return `${formatDateTime(startDate)} - ${formatDateTime(endDate)}`;
+  };
+
+  const getActionButton = (channel: PaymentChannel) => {
+    const isLoading = actionLoading === channel.channelId;
+    
+    if (channel.status === 1) { // Inactive - Show PayNow
+      return (
+        <Button
+          onClick={() => handlePayNow(channel)}
+          disabled={isLoading}
+          className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 text-sm"
+          size="sm"
+        >
+          {isLoading ? 'Processing...' : 'Pay Now'}
+        </Button>
+      );
+    } else if (channel.status === 2) { // Active
+      return (
+        <Button
+          onClick={() => handleChannelAction(channel.channelId, 'close')}
+          disabled={isLoading}
+          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm"
+          size="sm"
+        >
+          {isLoading ? 'Closing...' : 'Close'}
+        </Button>
+      );
+    } else { // Invalid
+      return (
+        <span className="text-sm text-gray-500 dark:text-gray-400">
+          {/* No actions available */}
+        </span>
+      );
     }
   };
 
   return (
-    <div className="w-full max-w-none p-8">
-      <h3 className="mb-6 text-lg font-semibold">CKB Address</h3>
-      {/* CKB Address Section */}
-      <div className="mb-8 rounded-lg border border-gray-100/30 bg-slate-50/50 shadow-sm dark:border-slate-700/40 dark:bg-slate-800">
-        <div className="p-6">
-          {/* <h4 className="mb-4 text-base font-semibold text-slate-700 dark:text-slate-300">
-            CKB Address
-          </h4> */}
-
-          {showInputs ? (
-            <div className="flex items-end gap-4">
-              <div className="flex-1">
-                <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Private Key
-                </label>
-                <Input
-                  type="password"
-                  value={privateKey}
-                  onChange={(e) => setPrivateKey(e.target.value)}
-                  placeholder="Enter your private key"
-                  className="w-full"
-                />
-              </div>
-              <Button
-                onClick={handleConnectCkb}
-                disabled={isLoading || !privateKey.trim()}
-                className="mb-0"
-              >
-                {isLoading ? "Connecting..." : "Connect CKB"}
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {isLoading ? (
-                <p className="text-sm text-slate-600 dark:text-slate-400">
-                  Generating address...
-                </p>
-              ) : ckbAddress ? (
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs font-medium tracking-wider text-slate-600 uppercase dark:text-slate-400">
-                      Address
-                    </label>
-                    <p className="text-sm font-medium break-all text-slate-700 dark:text-slate-300">
-                      {ckbAddress}
-                    </p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium tracking-wider text-slate-600 uppercase dark:text-slate-400">
-                      Balance
-                    </label>
-                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                      {balance} CKB
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-sm text-red-600 dark:text-red-400">
-                  Failed to generate address
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-      <h3 className="mb-6 text-lg font-semibold"> Server Information</h3>
-      {/* Server Public Key Section */}
-      <div className="rounded-lg border border-gray-100/30 bg-slate-50/50 shadow-sm dark:border-slate-700/40 dark:bg-slate-800">
-        <div className="p-5">
-          {/* <h4 className="mb-4 text-base font-semibold text-slate-700 dark:text-slate-300">
-            Server Information
-          </h4> */}
-          <PublicKeyDisplay />
-        </div>
-      </div>
-      {/* <h3 className="mb-6 text-lg font-semibold">Payment Channel</h3> */}
-      {/* <div className="mb-8 rounded-lg border border-gray-100/30 bg-slate-50/50 shadow-sm dark:border-slate-700/40 dark:bg-slate-800">
-        <div className="p-6">
-          <div className="flex items-start justify-between">
-            <div>
-              <h4 className="mb-2 text-base font-semibold text-slate-700 dark:text-slate-300">
-                ckb1qyqvsv5240xeh85wvnau2eky8pwrhh4jr8ts8vyj37
-              </h4>
-              <p className="text-sm text-slate-600 dark:text-slate-400">
-                January 1st - January 31st, 2024
-              </p>
-            </div>
-            <button className="rounded-md bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 focus:ring-2 focus:ring-red-500 focus:ring-offset-2 focus:outline-none">
-              Unsubscribe
-            </button>
+    <TooltipProvider>
+      <div className="w-full max-w-none h-[600px] overflow-y-scroll p-8">
+      <h3 className="mb-6 text-lg font-semibold">Payment Channels</h3>
+      
+      {isLoading ? (
+        // <div className="rounded-lg border border-gray-100/30 bg-slate-50/50 shadow-sm dark:border-slate-700/40 dark:bg-slate-800">
+          <div className="p-6 text-center">
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              Loading payment channels...
+            </p>
+          </div>
+        // </div>
+      ) : channels.length === 0 ? (
+        <div className="rounded-lg border border-gray-100/30 bg-slate-50/50 shadow-sm dark:border-slate-700/40 dark:bg-slate-800">
+          <div className="p-6 text-center">
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              No payment channels found. Create your first payment channel using the Recharge tab.
+            </p>
           </div>
         </div>
-      </div> */}
-      {/* Invoices Section */}
-      {/* <div className="space-y-4"> */}
-        {/* <h3 className="mb-6 text-lg font-semibold">Invoices</h3> */}
+      ) : (
+        <div className="space-y-4">
+          {channels.map((channel) => (
+            <div key={channel.id} className="rounded-lg border border-gray-100/30 bg-slate-50/50 shadow-sm dark:border-slate-700/40 dark:bg-slate-800">
+              {/* Accordion Header */}
+              <div 
+                className="p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors"
+                onClick={() => toggleChannelExpansion(channel.channelId)}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="text-xs font-mono text-slate-600 dark:text-slate-400">
+                          ...{channel.channelId.slice(-6)}
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="font-mono text-xs">{channel.channelId}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                      {channel.amount.toLocaleString()} CKB
+                    </div>
+                    <div className="text-xs text-slate-600 dark:text-slate-400">
+                      {getPeriodRange(channel.createdAt, channel.durationDays)}
+                    </div>
+                    <div>
+                      {getStatusBadge(channel.status, channel.statusText)}
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    {getActionButton(channel)}
+                    <div className="text-slate-400 dark:text-slate-500">
+                      {expandedChannels.has(channel.channelId) ? '▼' : '▶'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Accordion Content */}
+              {expandedChannels.has(channel.channelId) && (
+                <div className="border-t border-gray-200 dark:border-slate-700 p-6 bg-white dark:bg-slate-900">
+                  {/* Commented out for now to reduce content density */}
+                  {/*
+                  <div className="space-y-6">
+                    {/* Product Information */}
+                    {/*
+                    <div>
+                      <h4 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                        Product Information
+                      </h4>
+                      <div className="space-y-4 p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                            Amount
+                          </label>
+                          <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg font-mono text-xs text-slate-700 dark:text-slate-300">
+                            {channel.amount.toLocaleString()} CKB
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                            Tokens
+                          </label>
+                          <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg font-mono text-xs text-slate-700 dark:text-slate-300">
+                            {channel.amount.toLocaleString()}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                            Duration
+                          </label>
+                          <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg font-mono text-xs text-slate-700 dark:text-slate-300">
+                            {channel.durationDays} day{channel.durationDays > 1 ? 's' : ''}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    */}
+                    
+                    {/* Channel Information */}
+                    {/*
+                    <div>
+                      <h4 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                        Channel Information
+                      </h4>
+                      <div className="space-y-4 p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                            Channel ID
+                          </label>
+                          <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg font-mono text-xs break-all text-slate-700 dark:text-slate-300">
+                            {channel.channelId}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                            Period
+                          </label>
+                          <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg font-mono text-xs text-slate-700 dark:text-slate-300">
+                            {getPeriodRange(channel.createdAt, channel.durationDays)}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                            Status
+                          </label>
+                          <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg text-xs">
+                            {getStatusBadge(channel.status, channel.statusText)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    */}
+                  {/*
+                  </div>
+                  */}
+                  
+                  {/* Deposit Information */}
+                  <div className="">
+                    <h4 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                      Deposit Information
+                    </h4>
+                    <div className="space-y-4 p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                          Input Transaction Hash
+                        </label>
+                        <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg font-mono text-xs break-all text-slate-700 dark:text-slate-300">
+                          {extractRefundTxInfo(channel.refundTxData).inputTxHash}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                          Buyer Wallet Address
+                        </label>
+                        <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg font-mono text-xs break-all text-slate-700 dark:text-slate-300">
+                          {extractRefundTxInfo(channel.refundTxData).buyerAddress}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
 
-        {/* Table */}
-        {/* <div className="overflow-hidden rounded-lg border border-gray-100/30 bg-slate-50/50 shadow-sm dark:border-slate-700/40 dark:bg-slate-800">
-          <table className="w-full">
-            <thead className="bg-gray-100/50 dark:bg-slate-700/50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-bold tracking-wider text-slate-800 uppercase dark:text-slate-200">
-                  CKB Address
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-bold tracking-wider text-slate-800 uppercase dark:text-slate-200">
-                  Date
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-bold tracking-wider text-slate-800 uppercase dark:text-slate-200">
-                  Token
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-bold tracking-wider text-slate-800 uppercase dark:text-slate-200">
-                  Status
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100/50 dark:divide-slate-700/50">
-              <tr className="hover:bg-gray-50/50 dark:hover:bg-slate-700/30">
-                <td className="px-6 py-4 text-sm font-normal text-slate-600 dark:text-slate-400">
-                  ckb1qyqvsv5240xeh85...
-                </td>
-                <td className="px-6 py-4 text-sm font-normal text-slate-600 dark:text-slate-400">
-                  2024.01.05 - 2024-02.05
-                </td>
-                <td className="px-6 py-4 text-sm font-normal text-slate-600 dark:text-slate-400">
-                  10,000
-                </td>
-                <td className="px-6 py-4">
-                  <span className="inline-flex rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-400">
-                    Paid
-                  </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div> */}
-      {/* </div> */}
-    </div>
+                  {/* Seller Signature */}
+                  <div className="mt-6">
+                    <h4 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                      Seller Signature
+                    </h4>
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg">
+                      <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg font-mono text-xs break-all text-slate-700 dark:text-slate-300">
+                        {channel.sellerSignature || "No signature available"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}  
+      </div>
+    </TooltipProvider>
   );
 };
