@@ -1,8 +1,15 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/auth';
-import { PaymentChannelRepository, PAYMENT_CHANNEL_STATUS } from '@/lib/database';
-import { getMessageHashFromTx, generateCkbSecp256k1Signature } from '@/lib/ckb';
-import { ccc } from '@ckb-ccc/core';
+import { NextRequest, NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth";
+import {
+  PaymentChannelRepository,
+  PAYMENT_CHANNEL_STATUS,
+} from "@/lib/database";
+import {
+  getMessageHashFromTx,
+  generateCkbSecp256k1Signature,
+  generateCkbSecp256k1SignatureWithSince,
+} from "@/lib/ckb";
+import { ccc } from "@ckb-ccc/core";
 
 // Request body interface
 interface CreateChannelRequest {
@@ -16,13 +23,13 @@ interface CreateChannelRequest {
 function getStatusText(status: number): string {
   switch (status) {
     case PAYMENT_CHANNEL_STATUS.INACTIVE:
-      return 'Inactive';
+      return "Inactive";
     case PAYMENT_CHANNEL_STATUS.ACTIVE:
-      return 'Active';
+      return "Active";
     case PAYMENT_CHANNEL_STATUS.INVALID:
-      return 'Invalid';
+      return "Invalid";
     default:
-      return 'Unknown';
+      return "Unknown";
   }
 }
 
@@ -31,13 +38,14 @@ export async function POST(request: NextRequest) {
     // Require authentication
     const user = await requireAuth(request);
 
-    const { refundTx, fundingTx, amount, day }: CreateChannelRequest = await request.json();
+    const { refundTx, fundingTx, amount, day }: CreateChannelRequest =
+      await request.json();
 
     // Validate input
     if (!refundTx || !fundingTx || !amount || !day) {
       return NextResponse.json(
-        { error: 'refundTx, fundingTx, amount, and day are required' },
-        { status: 400 }
+        { error: "refundTx, fundingTx, amount, and day are required" },
+        { status: 400 },
       );
     }
 
@@ -45,24 +53,39 @@ export async function POST(request: NextRequest) {
     const sellerPrivateKey = process.env.SELLER_PRIVATE_KEY;
     if (!sellerPrivateKey) {
       return NextResponse.json(
-        { error: 'Server configuration error' },
-        { status: 500 }
+        { error: "Server configuration error" },
+        { status: 500 },
       );
     }
-    const refundCCC = ccc.Transaction.from(refundTx)
+    const refundCCC = ccc.Transaction.from(refundTx);
     // Generate message hash from refund transaction
-    const refundTxHash = refundCCC.hash()
+    const refundTxHash = refundCCC.hash();
     if (!refundTxHash) {
       return NextResponse.json(
-        { error: 'Invalid refund transaction: missing hash' },
-        { status: 400 }
+        { error: "Invalid refund transaction: missing hash" },
+        { status: 400 },
       );
     }
 
     const messageHash = getMessageHashFromTx(refundTxHash);
 
     // Generate seller signature
-    const sellerSignature = generateCkbSecp256k1Signature(sellerPrivateKey, messageHash);
+    const sellerSignature = generateCkbSecp256k1SignatureWithSince(
+      sellerPrivateKey,
+      messageHash,
+      ccc.numFromBytes(
+        new Uint8Array([
+          0x80,
+          0x00,
+          0x00,
+          0x00, // Relative time lock flag
+          0x00,
+          0x00,
+          0x00,
+          0x00,
+        ]),
+      ) + BigInt(day * 24 * 60 * 60),
+    );
 
     // Generate unique channel ID
     const channelId = `channel_${user.id}_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
@@ -75,7 +98,7 @@ export async function POST(request: NextRequest) {
       amount,
       duration_days: day,
       status: PAYMENT_CHANNEL_STATUS.INACTIVE, // Set to inactive when created
-      seller_signature: Buffer.from(sellerSignature).toString('hex'),
+      seller_signature: Buffer.from(sellerSignature).toString("hex"),
       refund_tx_data: JSON.stringify(refundTx),
       funding_tx_data: JSON.stringify(fundingTx),
     });
@@ -87,34 +110,30 @@ export async function POST(request: NextRequest) {
         channelId: paymentChannel.channel_id,
         status: paymentChannel.status,
         statusText: getStatusText(paymentChannel.status),
-        sellerSignature: Buffer.from(sellerSignature).toString('hex'),
+        sellerSignature: Buffer.from(sellerSignature).toString("hex"),
         refundTx: refundTx,
         fundingTx: fundingTx,
         amount,
         duration: day,
         createdAt: paymentChannel.created_at,
-      }
+      },
     });
-
   } catch (error) {
-    console.error('Payment channel creation error:', error);
+    console.error("Payment channel creation error:", error);
 
     if (error instanceof Error) {
-      if (error.message === 'Authentication required') {
+      if (error.message === "Authentication required") {
         return NextResponse.json(
-          { error: 'Authentication required' },
-          { status: 401 }
+          { error: "Authentication required" },
+          { status: 401 },
         );
       }
-      return NextResponse.json(
-        { error: error.message },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
     return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
+      { error: "Internal server error" },
+      { status: 500 },
     );
   }
 }

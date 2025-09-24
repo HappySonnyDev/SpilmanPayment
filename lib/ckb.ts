@@ -248,6 +248,36 @@ export const generateCkbSecp256k1Signature = (
   throw new Error("sign error");
 };
 
+export const generateCkbSecp256k1SignatureWithSince = (
+  privateKey: string,
+  transactionHash: Uint8Array,
+  sinceValue: bigint
+): Uint8Array => {
+  // Convert since value to 8-byte array (little endian)
+  const sinceBytes = new Uint8Array(8);
+  let since = sinceValue;
+  for (let i = 0; i < 8; i++) {
+    sinceBytes[i] = Number(since & 0xffn);
+    since = since >> 8n;
+  }
+  
+  // Combine transaction hash and since for signing
+  const combinedMessage = new Uint8Array(transactionHash.length + sinceBytes.length);
+  combinedMessage.set(transactionHash, 0);
+  combinedMessage.set(sinceBytes, transactionHash.length);
+  
+  // Hash the combined message
+  const combinedHash = hashCkb(combinedMessage.buffer);
+  // Convert hex string to Uint8Array
+  const hashStr = combinedHash.slice(2); // Remove 0x prefix
+  const finalMessageHash = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) {
+    finalMessageHash[i] = parseInt(hashStr.substr(i * 2, 2), 16);
+  }
+  
+  // Generate signature using the combined hash
+  return generateCkbSecp256k1Signature(privateKey, finalMessageHash);
+};
 export const jsonStr = (obj: unknown) => {
   return JSON.stringify(obj, (key, value) => {
     if (typeof value === "bigint") {

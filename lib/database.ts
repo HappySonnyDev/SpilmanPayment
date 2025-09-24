@@ -21,7 +21,7 @@ export function getDatabase() {
 }
 
 // Database version for migrations
-const DATABASE_VERSION = 3;
+const DATABASE_VERSION = 5; // Update to version 5 for consumed_tokens column
 
 // Initialize database tables
 function initializeDatabase() {
@@ -114,6 +114,12 @@ function runMigrations() {
   if (currentVersion < 3) {
     migrateToVersion3();
   }
+  if (currentVersion < 4) {
+    migrateToVersion4();
+  }
+  if (currentVersion < 5) {
+    migrateToVersion5();
+  }
 
   // Update database version
   const updateVersionStmt = db.prepare('INSERT OR REPLACE INTO database_info (key, value) VALUES (?, ?)');
@@ -192,6 +198,74 @@ function migrateToVersion3() {
     }
   } catch (error) {
     console.error('Error during migration to version 3:', error);
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+// Migration to version 4: Add is_default column to payment_channels
+function migrateToVersion4() {
+  console.log('Running migration to version 4: adding is_default column to payment_channels');
+  
+  try {
+    // Check if is_default column already exists
+    const pragmaStmt = db.prepare('PRAGMA table_info(payment_channels)');
+    const columns = pragmaStmt.all() as Array<{ name: string }>;
+    const hasIsDefaultColumn = columns.some(col => col.name === 'is_default');
+    
+    if (!hasIsDefaultColumn) {
+      // Begin transaction
+      db.exec('BEGIN TRANSACTION');
+      
+      // Add is_default column
+      db.exec('ALTER TABLE payment_channels ADD COLUMN is_default BOOLEAN DEFAULT 0');
+      
+      // Create index for is_default
+      db.exec('CREATE INDEX IF NOT EXISTS idx_payment_channels_is_default ON payment_channels (is_default)');
+      
+      // Commit transaction
+      db.exec('COMMIT');
+      
+      console.log('Successfully added is_default column');
+    } else {
+      console.log('Is_default column already exists, skipping migration');
+    }
+  } catch (error) {
+    console.error('Error during migration to version 4:', error);
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+// Migration to version 5: Add consumed_tokens column to payment_channels
+function migrateToVersion5() {
+  console.log('Running migration to version 5: adding consumed_tokens column to payment_channels');
+  
+  try {
+    // Check if consumed_tokens column already exists
+    const pragmaStmt = db.prepare('PRAGMA table_info(payment_channels)');
+    const columns = pragmaStmt.all() as Array<{ name: string }>;
+    const hasConsumedTokensColumn = columns.some(col => col.name === 'consumed_tokens');
+    
+    if (!hasConsumedTokensColumn) {
+      // Begin transaction
+      db.exec('BEGIN TRANSACTION');
+      
+      // Add consumed_tokens column
+      db.exec('ALTER TABLE payment_channels ADD COLUMN consumed_tokens INTEGER DEFAULT 0');
+      
+      // Create index for consumed_tokens
+      db.exec('CREATE INDEX IF NOT EXISTS idx_payment_channels_consumed_tokens ON payment_channels (consumed_tokens)');
+      
+      // Commit transaction
+      db.exec('COMMIT');
+      
+      console.log('Successfully added consumed_tokens column');
+    } else {
+      console.log('Consumed_tokens column already exists, skipping migration');
+    }
+  } catch (error) {
+    console.error('Error during migration to version 5:', error);
     db.exec('ROLLBACK');
     throw error;
   }
@@ -338,6 +412,8 @@ export interface PaymentChannel {
   seller_signature: string | null;
   refund_tx_data: string | null;
   funding_tx_data: string | null;
+  is_default: number; // SQLite stores boolean as integer (0 or 1)
+  consumed_tokens: number; // Number of tokens consumed
   created_at: string;
   updated_at: string;
 }
@@ -352,6 +428,8 @@ export interface CreatePaymentChannelData {
   seller_signature?: string;
   refund_tx_data?: string;
   funding_tx_data?: string;
+  is_default?: boolean; // API accepts boolean, will be converted to integer internally
+  consumed_tokens?: number; // Number of tokens consumed, defaults to 0
 }
 
 // Payment Channel database operations
@@ -363,16 +441,18 @@ export class PaymentChannelRepository {
   }
 
   createPaymentChannel(channelData: CreatePaymentChannelData): PaymentChannel {
-    const { user_id, channel_id, amount, duration_days, status, seller_signature, refund_tx_data, funding_tx_data } = channelData;
+    const { user_id, channel_id, amount, duration_days, status, seller_signature, refund_tx_data, funding_tx_data, is_default, consumed_tokens } = channelData;
     
     const stmt = this.db.prepare(`
-      INSERT INTO payment_channels (user_id, channel_id, amount, duration_days, status, seller_signature, refund_tx_data, funding_tx_data)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO payment_channels (user_id, channel_id, amount, duration_days, status, seller_signature, refund_tx_data, funding_tx_data, is_default, consumed_tokens)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     try {
       const channelStatus = status || PAYMENT_CHANNEL_STATUS.INACTIVE; // Default to inactive
-      const result = stmt.run(user_id, channel_id, amount, duration_days, channelStatus, seller_signature || null, refund_tx_data || null, funding_tx_data || null);
+      const defaultFlag = is_default ? 1 : 0; // Convert boolean to integer for SQLite
+      const consumedTokens = consumed_tokens || 0; // Default to 0 consumed tokens
+      const result = stmt.run(user_id, channel_id, amount, duration_days, channelStatus, seller_signature || null, refund_tx_data || null, funding_tx_data || null, defaultFlag, consumedTokens);
       return this.getPaymentChannelById(result.lastInsertRowid as number)!;
     } catch (error: unknown) {
       if (error instanceof Error && 'code' in error && error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
@@ -430,5 +510,49 @@ export class PaymentChannelRepository {
   getPaymentChannelsByStatus(userId: number, status: PaymentChannelStatus): PaymentChannel[] {
     const stmt = this.db.prepare('SELECT * FROM payment_channels WHERE user_id = ? AND status = ? ORDER BY created_at DESC');
     return stmt.all(userId, status) as PaymentChannel[];
+  }
+
+  // Default channel management methods
+  getUserDefaultChannel(userId: number): PaymentChannel | null {
+    const stmt = this.db.prepare('SELECT * FROM payment_channels WHERE user_id = ? AND is_default = 1 AND status = ? LIMIT 1');
+    return stmt.get(userId, PAYMENT_CHANNEL_STATUS.ACTIVE) as PaymentChannel | null;
+  }
+
+  setChannelAsDefault(channelId: string, userId: number): PaymentChannel | null {
+    const transaction = this.db.transaction(() => {
+      // First, remove default flag from all other channels for this user
+      const clearDefaultStmt = this.db.prepare('UPDATE payment_channels SET is_default = 0 WHERE user_id = ? AND channel_id != ?');
+      clearDefaultStmt.run(userId, channelId);
+      
+      // Then set the specified channel as default
+      const setDefaultStmt = this.db.prepare('UPDATE payment_channels SET is_default = 1, updated_at = CURRENT_TIMESTAMP WHERE channel_id = ? AND user_id = ?');
+      setDefaultStmt.run(channelId, userId);
+    });
+    
+    transaction();
+    return this.getPaymentChannelByChannelId(channelId);
+  }
+
+  clearUserDefaultChannel(userId: number): void {
+    const stmt = this.db.prepare('UPDATE payment_channels SET is_default = 0, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?');
+    stmt.run(userId);
+  }
+
+  // Auto-assign default channel to the first active channel if no default exists
+  autoAssignDefaultChannel(userId: number): PaymentChannel | null {
+    // Check if user already has a default channel
+    const existingDefault = this.getUserDefaultChannel(userId);
+    if (existingDefault) {
+      return existingDefault;
+    }
+
+    // Find the first active channel for this user
+    const activeChannels = this.getPaymentChannelsByStatus(userId, PAYMENT_CHANNEL_STATUS.ACTIVE);
+    if (activeChannels.length > 0) {
+      const firstActiveChannel = activeChannels[0];
+      return this.setChannelAsDefault(firstActiveChannel.channel_id, userId);
+    }
+
+    return null;
   }
 }
