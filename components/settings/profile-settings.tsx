@@ -1,7 +1,10 @@
 "use client";
+"use client";
 
 import React from "react";
 import { useAuth } from "@/components/auth/auth-context";
+import { PublicKeyDisplay } from "@/components/public-key-display";
+import { UserInfoExample } from "@/components/user-info-example";
 
 export const ProfileSettings: React.FC = () => {
   const { user } = useAuth();
@@ -72,6 +75,15 @@ export const ProfileSettings: React.FC = () => {
               </div>
             </div>
           </div>
+
+     
+
+          {/* User Info State Management Example */}
+          {/* <div className="rounded-lg border border-gray-100/30 bg-slate-50/50 shadow-sm dark:border-slate-700/40 dark:bg-slate-800">
+            <div className="p-5">
+              <UserInfoExample />
+            </div>
+          </div> */}
         </div>
       )}
     </div>

@@ -1,0 +1,12 @@
+{
+  "cell_recipes": [
+    {
+      "name": "2of2.bc",
+      "tx_hash": "0x034043bb438229d6174c8845914663371b67de79587e1d9d5f7da1c0a54d2dec",
+      "index": 0,
+      "occupied_capacity": 3216100000000,
+      "data_hash": "0xfb21c4fad75a1d4d0d6a4027fab357da08038b44a7fbae584f57bc2adef84a2e"
+    }
+  ],
+  "dep_group_recipes": []
+}

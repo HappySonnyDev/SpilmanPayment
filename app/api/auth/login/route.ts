@@ -16,12 +16,16 @@ export async function POST(request: NextRequest) {
     const authService = new AuthService();
     const { user, token } = await authService.login(emailOrUsername, password);
 
-    // Create response with user data (excluding password hash)
+    // Get public key
+    const publicKey = authService.getPublicKey();
+
+    // Create response with user data (excluding password hash) including public key
     const userData = {
       id: user.id,
       email: user.email,
       username: user.username,
-      created_at: user.created_at
+      created_at: user.created_at,
+      public_key: publicKey
     };
 
     const response = NextResponse.json({
