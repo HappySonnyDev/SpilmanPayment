@@ -33,7 +33,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { User, BarChart3, CreditCard, LogOut, ChevronDown } from "lucide-react";
+import { User, BarChart3, CreditCard, LogOut, ChevronDown, Wallet } from "lucide-react";
 
 export const Assistant = () => {
   const { user, logout } = useAuth();
@@ -41,7 +41,7 @@ export const Assistant = () => {
   const [authDialogTab, setAuthDialogTab] = useState<'login' | 'register'>('login');
   const [pendingMessage, setPendingMessage] = useState('');
   const [showUserSettings, setShowUserSettings] = useState(false);
-  const [userSettingsTab, setUserSettingsTab] = useState<'profile' | 'usage' | 'billing'>('profile');
+  const [userSettingsTab, setUserSettingsTab] = useState<'profile' | 'usage' | 'billing' | 'recharge'>('profile');
 
   const runtime = useChatRuntime({
     transport: new AssistantChatTransport({
@@ -54,7 +54,7 @@ export const Assistant = () => {
     setShowAuthDialog(true);
   };
 
-  const handleUserMenuClick = (tab: 'profile' | 'usage' | 'billing') => {
+  const handleUserMenuClick = (tab: 'profile' | 'usage' | 'billing' | 'recharge') => {
     setUserSettingsTab(tab);
     setShowUserSettings(true);
   };
@@ -135,6 +135,10 @@ export const Assistant = () => {
                         <DropdownMenuItem onClick={() => handleUserMenuClick('billing')}>
                           <CreditCard className="mr-2 h-4 w-4" />
                           <span>Payment Channel</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleUserMenuClick('recharge')}>
+                          <Wallet className="mr-2 h-4 w-4" />
+                          <span>Recharge</span>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onClick={logout}>

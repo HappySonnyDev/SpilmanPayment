@@ -44,16 +44,36 @@ function initializeDatabase() {
     )
   `;
 
+  const createPaymentChannelsTable = `
+    CREATE TABLE IF NOT EXISTS payment_channels (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      channel_id TEXT NOT NULL UNIQUE,
+      amount INTEGER NOT NULL,
+      duration_days INTEGER NOT NULL,
+      is_active BOOLEAN DEFAULT 1,
+      seller_signature TEXT,
+      refund_tx_data TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+    )
+  `;
+
   const createIndexes = [
     'CREATE INDEX IF NOT EXISTS idx_users_email ON users (email)',
     'CREATE INDEX IF NOT EXISTS idx_users_username ON users (username)',
     'CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions (user_id)',
-    'CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions (expires_at)'
+    'CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions (expires_at)',
+    'CREATE INDEX IF NOT EXISTS idx_payment_channels_user_id ON payment_channels (user_id)',
+    'CREATE INDEX IF NOT EXISTS idx_payment_channels_channel_id ON payment_channels (channel_id)',
+    'CREATE INDEX IF NOT EXISTS idx_payment_channels_is_active ON payment_channels (is_active)'
   ];
 
   try {
     db.exec(createUsersTable);
     db.exec(createSessionsTable);
+    db.exec(createPaymentChannelsTable);
     createIndexes.forEach(index => db.exec(index));
     console.log('Database initialized successfully');
   } catch (error) {
@@ -180,5 +200,88 @@ export class SessionRepository {
   deleteUserSessions(userId: number): void {
     const stmt = this.db.prepare('DELETE FROM sessions WHERE user_id = ?');
     stmt.run(userId);
+  }
+}
+
+// Payment Channel interface
+export interface PaymentChannel {
+  id: number;
+  user_id: number;
+  channel_id: string;
+  amount: number;
+  duration_days: number;
+  is_active: boolean;
+  seller_signature: string | null;
+  refund_tx_data: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Payment Channel creation interface
+export interface CreatePaymentChannelData {
+  user_id: number;
+  channel_id: string;
+  amount: number;
+  duration_days: number;
+  seller_signature?: string;
+  refund_tx_data?: string;
+}
+
+// Payment Channel database operations
+export class PaymentChannelRepository {
+  private db: Database.Database;
+
+  constructor() {
+    this.db = getDatabase();
+  }
+
+  createPaymentChannel(channelData: CreatePaymentChannelData): PaymentChannel {
+    const { user_id, channel_id, amount, duration_days, seller_signature, refund_tx_data } = channelData;
+    
+    const stmt = this.db.prepare(`
+      INSERT INTO payment_channels (user_id, channel_id, amount, duration_days, seller_signature, refund_tx_data)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    try {
+      const result = stmt.run(user_id, channel_id, amount, duration_days, seller_signature || null, refund_tx_data || null);
+      return this.getPaymentChannelById(result.lastInsertRowid as number)!;
+    } catch (error: unknown) {
+      if (error instanceof Error && 'code' in error && error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+        throw new Error('Payment channel with this ID already exists');
+      }
+      throw error;
+    }
+  }
+
+  getPaymentChannelById(id: number): PaymentChannel | null {
+    const stmt = this.db.prepare('SELECT * FROM payment_channels WHERE id = ?');
+    return stmt.get(id) as PaymentChannel | null;
+  }
+
+  getPaymentChannelByChannelId(channelId: string): PaymentChannel | null {
+    const stmt = this.db.prepare('SELECT * FROM payment_channels WHERE channel_id = ?');
+    return stmt.get(channelId) as PaymentChannel | null;
+  }
+
+  getPaymentChannelsByUserId(userId: number): PaymentChannel[] {
+    const stmt = this.db.prepare('SELECT * FROM payment_channels WHERE user_id = ? ORDER BY created_at DESC');
+    return stmt.all(userId) as PaymentChannel[];
+  }
+
+  updatePaymentChannelSignature(channelId: string, signature: string, refundTxData: string): PaymentChannel | null {
+    const stmt = this.db.prepare(`
+      UPDATE payment_channels 
+      SET seller_signature = ?, refund_tx_data = ?, updated_at = CURRENT_TIMESTAMP 
+      WHERE channel_id = ?
+    `);
+    
+    stmt.run(signature, refundTxData, channelId);
+    return this.getPaymentChannelByChannelId(channelId);
+  }
+
+  deactivatePaymentChannel(channelId: string): void {
+    const stmt = this.db.prepare('UPDATE payment_channels SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE channel_id = ?');
+    stmt.run(channelId);
   }
 }
