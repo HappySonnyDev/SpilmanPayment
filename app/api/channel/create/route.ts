@@ -1,14 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth';
-import { PaymentChannelRepository } from '@/lib/database';
+import { PaymentChannelRepository, PAYMENT_CHANNEL_STATUS } from '@/lib/database';
 import { getMessageHashFromTx, generateCkbSecp256k1Signature } from '@/lib/ckb';
 import { ccc } from '@ckb-ccc/core';
 
 // Request body interface
 interface CreateChannelRequest {
   refundTx: Record<string, unknown>; // CKB transaction structure
+  fundingTx: Record<string, unknown>; // CKB funding transaction structure
   amount: number;
   day: number;
+}
+
+// Helper function to get status text
+function getStatusText(status: number): string {
+  switch (status) {
+    case PAYMENT_CHANNEL_STATUS.INACTIVE:
+      return 'Inactive';
+    case PAYMENT_CHANNEL_STATUS.ACTIVE:
+      return 'Active';
+    case PAYMENT_CHANNEL_STATUS.INVALID:
+      return 'Invalid';
+    default:
+      return 'Unknown';
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -16,12 +31,12 @@ export async function POST(request: NextRequest) {
     // Require authentication
     const user = await requireAuth(request);
 
-    const { refundTx, amount, day }: CreateChannelRequest = await request.json();
+    const { refundTx, fundingTx, amount, day }: CreateChannelRequest = await request.json();
 
     // Validate input
-    if (!refundTx || !amount || !day) {
+    if (!refundTx || !fundingTx || !amount || !day) {
       return NextResponse.json(
-        { error: 'refundTx, amount, and day are required' },
+        { error: 'refundTx, fundingTx, amount, and day are required' },
         { status: 400 }
       );
     }
@@ -52,24 +67,29 @@ export async function POST(request: NextRequest) {
     // Generate unique channel ID
     const channelId = `channel_${user.id}_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
 
-    // Save to database
+    // Save to database with INACTIVE status
     const paymentChannelRepo = new PaymentChannelRepository();
     const paymentChannel = paymentChannelRepo.createPaymentChannel({
       user_id: user.id,
       channel_id: channelId,
       amount,
       duration_days: day,
+      status: PAYMENT_CHANNEL_STATUS.INACTIVE, // Set to inactive when created
       seller_signature: Buffer.from(sellerSignature).toString('hex'),
       refund_tx_data: JSON.stringify(refundTx),
+      funding_tx_data: JSON.stringify(fundingTx),
     });
 
-    // Return signature and refund transaction structure
+    // Return signature and transaction structures
     return NextResponse.json({
       success: true,
       data: {
         channelId: paymentChannel.channel_id,
+        status: paymentChannel.status,
+        statusText: getStatusText(paymentChannel.status),
         sellerSignature: Buffer.from(sellerSignature).toString('hex'),
         refundTx: refundTx,
+        fundingTx: fundingTx,
         amount,
         duration: day,
         createdAt: paymentChannel.created_at,
