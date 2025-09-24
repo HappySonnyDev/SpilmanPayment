@@ -8,16 +8,17 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { User, BarChart3, CreditCard } from "lucide-react";
+import { User, BarChart3, CreditCard, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ProfileSettings } from "@/components/settings/profile-settings";
 import { UsageSettings } from "@/components/settings/usage-settings";
 import { PaymentChannelSettings } from "@/components/settings/payment-channel-settings";
+import { RechargeSettings } from "@/components/settings/recharge-settings";
 
 interface UserSettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  defaultTab?: "profile" | "usage" | "billing";
+  defaultTab?: "profile" | "usage" | "billing" | "recharge";
 }
 
 export const UserSettingsDialog: React.FC<UserSettingsDialogProps> = ({
@@ -38,6 +39,7 @@ export const UserSettingsDialog: React.FC<UserSettingsDialogProps> = ({
     { id: "profile", label: "Profile", icon: User },
     { id: "usage", label: "Usage", icon: BarChart3 },
     { id: "billing", label: "Payment Channel", icon: CreditCard },
+    { id: "recharge", label: "Recharge", icon: Wallet },
   ];
 
   const renderContent = () => {
@@ -48,6 +50,8 @@ export const UserSettingsDialog: React.FC<UserSettingsDialogProps> = ({
         return <UsageSettings />;
       case "billing":
         return <PaymentChannelSettings />;
+      case "recharge":
+        return <RechargeSettings />;
       default:
         return null;
     }
@@ -79,7 +83,7 @@ export const UserSettingsDialog: React.FC<UserSettingsDialogProps> = ({
                         "bg-primary text-primary-foreground",
                     )}
                     onClick={() =>
-                      setActiveTab(tab.id as "profile" | "usage" | "billing")
+                      setActiveTab(tab.id as "profile" | "usage" | "billing" | "recharge")
                     }
                   >
                     <Icon className="mr-2 h-4 w-4" />
