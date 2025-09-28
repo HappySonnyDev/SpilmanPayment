@@ -50,9 +50,24 @@ export const Assistant = () => {
     console.log('🎯 Received chunk payment data:', dataPart);
     
     if (dataPart.type === 'data-chunk-payment') {
-      const data = dataPart.data as { chunkId: string; tokens: number; sessionId: string; isPaid: boolean };
-      const { chunkId, tokens } = data;
+      const data = dataPart.data as { 
+        chunkId: string; 
+        tokens: number; 
+        sessionId: string; 
+        isPaid: boolean;
+        cumulativePayment: number;
+        remainingBalance: number;
+        channelId: string;
+        channelTotalAmount: number;
+      };
+      const { chunkId, tokens, cumulativePayment, remainingBalance, channelId, channelTotalAmount } = data;
+      
       console.log(`📦 Processing chunk payment: ${chunkId} (${tokens} tokens)`);
+      console.log(`💰 Payment Channel Status:`);
+      console.log(`   - Channel ID: ${channelId}`);
+      console.log(`   - Total Amount: ${channelTotalAmount} CKB`);
+      console.log(`   - Cumulative Payment: ${cumulativePayment} CKB`);
+      console.log(`   - Remaining Balance: ${remainingBalance} CKB`);
       
       try {
         // Automatically pay for the chunk

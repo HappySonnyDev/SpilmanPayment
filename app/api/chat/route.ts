@@ -8,7 +8,7 @@ import {
 } from "ai";
 import { NextRequest } from "next/server";
 import { requireAuth } from "@/lib/auth";
-import { ChunkPaymentRepository } from "@/lib/database";
+import { ChunkPaymentRepository, PaymentChannelRepository } from "@/lib/database";
 import { getOrCreateTracker, generateChunkId, countTokens } from "@/lib/token-tracker";
 
 // Initialize OpenRouter provider
@@ -32,6 +32,20 @@ export async function POST(req: NextRequest) {
     // Initialize token tracker for this session
     const tokenTracker = getOrCreateTracker(userId, currentSessionId);
     const chunkRepo = new ChunkPaymentRepository();
+    const channelRepo = new PaymentChannelRepository();
+    
+    // Get user's default payment channel for calculations
+    const defaultChannel = channelRepo.getUserDefaultChannel(userId);
+    
+    if (!defaultChannel) {
+      return new Response(
+        JSON.stringify({ error: "No active payment channel found. Please activate a payment channel first." }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
     
     console.log('Streaming started for session:', currentSessionId, 'User:', userId);
     
@@ -53,20 +67,39 @@ export async function POST(req: NextRequest) {
                   chunk_id: chunkId,
                   user_id: userId,
                   session_id: currentSessionId,
+                  channel_id: defaultChannel.channel_id, // Associate with payment channel
                   tokens_count: tokens,
                   is_paid: false
                 });
                 
                 console.log(`New chunk created: ${chunkId} (${tokens} tokens)`);
                 
-                // Send chunk payment data to the client
+                // Calculate cumulative payment for this payment channel (Bitcoin-style)
+                // This includes: consumed_tokens (already paid) + all unpaid tokens for this channel
+                const currentConsumedTokens = defaultChannel.consumed_tokens || 0;
+                const currentUnpaidTokens = chunkRepo.getChannelUnpaidTokens(defaultChannel.channel_id);
+                
+                // Total cumulative payment = already paid + currently unpaid (including this chunk)
+                const cumulativePayment = currentConsumedTokens + currentUnpaidTokens;
+                
+                // Calculate remaining balance (total channel amount - cumulative payment)
+                const remainingBalance = defaultChannel.amount - cumulativePayment;
+                
+                console.log(`Payment Channel ${defaultChannel.channel_id}: Cumulative ${cumulativePayment}/${defaultChannel.amount} tokens (${remainingBalance} remaining)`);
+                
+                // Send chunk payment data to the client with Bitcoin-style payment channel info
                 writer.write({
                   type: 'data-chunk-payment',
                   data: {
                     chunkId,
                     tokens,
                     sessionId: currentSessionId,
-                    isPaid: false
+                    isPaid: false,
+                    // Bitcoin-style unidirectional payment channel fields
+                    cumulativePayment, // Total amount user should pay (sum of all tokens in this channel)
+                    remainingBalance,  // User's remaining balance (total - cumulative)
+                    channelId: defaultChannel.channel_id,
+                    channelTotalAmount: defaultChannel.amount
                   },
                   transient: true // Don't add to message history
                 });

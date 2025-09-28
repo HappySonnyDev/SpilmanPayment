@@ -21,7 +21,7 @@ export function getDatabase() {
 }
 
 // Database version for migrations
-const DATABASE_VERSION = 6; // Update to version 6 for chunk_payments table
+const DATABASE_VERSION = 7; // Update to version 7 for tx_hash column
 
 // Initialize database tables
 function initializeDatabase() {
@@ -122,6 +122,9 @@ function runMigrations() {
   }
   if (currentVersion < 6) {
     migrateToVersion6();
+  }
+  if (currentVersion < 7) {
+    migrateToVersion7();
   }
 
   // Update database version
@@ -317,6 +320,40 @@ function migrateToVersion6() {
   }
 }
 
+// Migration to version 7: Add tx_hash column to payment_channels
+function migrateToVersion7() {
+  console.log('Running migration to version 7: adding tx_hash column to payment_channels');
+  
+  try {
+    // Check if tx_hash column already exists
+    const pragmaStmt = db.prepare('PRAGMA table_info(payment_channels)');
+    const columns = pragmaStmt.all() as Array<{ name: string }>;
+    const hasTxHashColumn = columns.some(col => col.name === 'tx_hash');
+    
+    if (!hasTxHashColumn) {
+      // Begin transaction
+      db.exec('BEGIN TRANSACTION');
+      
+      // Add tx_hash column
+      db.exec('ALTER TABLE payment_channels ADD COLUMN tx_hash TEXT');
+      
+      // Create index for tx_hash
+      db.exec('CREATE INDEX IF NOT EXISTS idx_payment_channels_tx_hash ON payment_channels (tx_hash)');
+      
+      // Commit transaction
+      db.exec('COMMIT');
+      
+      console.log('Successfully added tx_hash column');
+    } else {
+      console.log('Tx_hash column already exists, skipping migration');
+    }
+  } catch (error) {
+    console.error('Error during migration to version 7:', error);
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 // User interface
 export interface User {
   id: number;
@@ -458,6 +495,7 @@ export interface PaymentChannel {
   seller_signature: string | null;
   refund_tx_data: string | null;
   funding_tx_data: string | null;
+  tx_hash: string | null; // Transaction hash after confirmation
   is_default: number; // SQLite stores boolean as integer (0 or 1)
   consumed_tokens: number; // Number of tokens consumed
   created_at: string;
@@ -554,6 +592,17 @@ export class PaymentChannelRepository {
     `);
     
     stmt.run(signature, refundTxData, channelId);
+    return this.getPaymentChannelByChannelId(channelId);
+  }
+
+  updatePaymentChannelTxHash(channelId: string, txHash: string): PaymentChannel | null {
+    const stmt = this.db.prepare(`
+      UPDATE payment_channels 
+      SET tx_hash = ?, updated_at = CURRENT_TIMESTAMP 
+      WHERE channel_id = ?
+    `);
+    
+    stmt.run(txHash, channelId);
     return this.getPaymentChannelByChannelId(channelId);
   }
 
@@ -699,6 +748,20 @@ export class ChunkPaymentRepository {
   getUserTotalUnpaidTokens(userId: number): number {
     const stmt = this.db.prepare('SELECT SUM(tokens_count) as total FROM chunk_payments WHERE user_id = ? AND is_paid = 0');
     const result = stmt.get(userId) as { total: number | null };
+    return result.total || 0;
+  }
+
+  // Get total unpaid tokens for a specific payment channel
+  getChannelUnpaidTokens(channelId: string): number {
+    const stmt = this.db.prepare('SELECT SUM(tokens_count) as total FROM chunk_payments WHERE channel_id = ? AND is_paid = 0');
+    const result = stmt.get(channelId) as { total: number | null };
+    return result.total || 0;
+  }
+
+  // Get cumulative tokens (paid + unpaid) for a payment channel
+  getChannelCumulativeTokens(channelId: string): number {
+    const stmt = this.db.prepare('SELECT SUM(tokens_count) as total FROM chunk_payments WHERE channel_id = ? OR channel_id IS NULL');
+    const result = stmt.get(channelId) as { total: number | null };
     return result.total || 0;
   }
 

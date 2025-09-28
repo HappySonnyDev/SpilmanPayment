@@ -148,6 +148,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Store the verified transaction hash in the database
+    const channelWithTxHash = paymentChannelRepo.updatePaymentChannelTxHash(channelId, txHash);
+    
+    if (!channelWithTxHash) {
+      console.warn(`Warning: Failed to update tx_hash for channel ${channelId}`);
+      // Don't fail the operation since activation was successful
+    } else {
+      console.log(`Successfully stored tx_hash ${txHash} for channel ${channelId}`);
+    }
+
     // Invalidate all other inactive channels for this user
     // When one channel is activated, all other inactive channels become invalid
     try {
