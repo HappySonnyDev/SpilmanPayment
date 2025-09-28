@@ -3,7 +3,7 @@ import 'server-only';
 import { SignJWT, jwtVerify } from 'jose';
 import { cookies } from 'next/headers';
 import { NextRequest } from 'next/server';
-import { UserRepository, SessionRepository, User } from './database';
+import { UserRepository, SessionRepository, User, PaymentChannelRepository, PAYMENT_CHANNEL_STATUS } from './database';
 import { secp256k1 } from '@noble/curves/secp256k1';
 
 // JWT secret - in production, use a strong secret from environment variables
@@ -22,10 +22,12 @@ export interface JWTPayload {
 export class AuthService {
   private userRepo: UserRepository;
   private sessionRepo: SessionRepository;
+  private channelRepo: PaymentChannelRepository;
 
   constructor() {
     this.userRepo = new UserRepository();
     this.sessionRepo = new SessionRepository();
+    this.channelRepo = new PaymentChannelRepository();
   }
 
   // Generate public key from server private key
@@ -42,9 +44,40 @@ export class AuthService {
     return Buffer.from(publicKey).toString('hex');
   }
 
+  // Generate seller address from server private key
+  private async generateSellerAddress(): Promise<string> {
+    const { ccc } = await import('@ckb-ccc/core');
+    const { DEVNET_SCRIPTS } = await import('./ckb');
+    
+    const privateKey = process.env.SELLER_PRIVATE_KEY;
+    if (!privateKey) {
+      throw new Error('SELLER_PRIVATE_KEY not found in environment variables');
+    }
+    
+    const client = new ccc.ClientPublicTestnet({
+      url: "http://localhost:28114",
+      scripts: DEVNET_SCRIPTS,
+    });
+    const sellerSigner = new ccc.SignerCkbPrivateKey(client, privateKey);
+    const sellerAddress = await sellerSigner.getRecommendedAddress();
+    
+    return sellerAddress;
+  }
+
   // Public method to get the public key
   getPublicKey(): string {
     return this.generatePublicKey();
+  }
+
+  // Public method to get seller address
+  async getSellerAddress(): Promise<string> {
+    return this.generateSellerAddress();
+  }
+
+  // Get user's active payment channel
+  getActivePaymentChannel(userId: number) {
+    const channels = this.channelRepo.getPaymentChannelsByUserId(userId);
+    return channels.find(channel => channel.status === PAYMENT_CHANNEL_STATUS.ACTIVE);
   }
 
   // Generate session ID

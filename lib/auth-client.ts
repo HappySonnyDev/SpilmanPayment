@@ -7,6 +7,14 @@ export interface User {
   created_at: string;
   is_active: boolean;
   public_key?: string;
+  seller_address?: string;
+  active_channel?: {
+    channelId: string;
+    txHash: string | null;
+    amount: number;
+    consumed_tokens: number;
+    status: number;
+  } | null;
 }
 
 // JWT payload interface

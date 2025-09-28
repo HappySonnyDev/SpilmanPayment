@@ -70,8 +70,13 @@ export const Assistant = () => {
       console.log(`   - Remaining Balance: ${remainingBalance} CKB`);
       
       try {
-        // Automatically pay for the chunk
-        await payForChunk(chunkId);
+        // Automatically pay for the chunk with enhanced payment info
+        await payForChunk(chunkId, {
+          cumulativePayment,
+          remainingBalance,
+          channelId,
+          tokens
+        });
         console.log(`✅ Successfully paid for chunk: ${chunkId}`);
       } catch (error) {
         console.error(`❌ Failed to pay for chunk ${chunkId}:`, error);

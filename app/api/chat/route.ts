@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
                 
                 // Send chunk payment data to the client with Bitcoin-style payment channel info
                 writer.write({
-                  type: 'data-chunk-payment',
+                  type: 'data-chunk-payment' as const,
                   data: {
                     chunkId,
                     tokens,

@@ -13,17 +13,29 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Generate public key from server private key
+    // Generate public key from server private key and seller address
     const publicKey = authService.getPublicKey();
+    const sellerAddress = await authService.getSellerAddress();
+    
+    // Get user's active payment channel
+    const activeChannel = authService.getActivePaymentChannel(user.id);
 
-    // Return user data (excluding password hash) with public key
+    // Return user data (excluding password hash) with public key and seller address
     const userData = {
       id: user.id,
       email: user.email,
       username: user.username,
       created_at: user.created_at,
       is_active: user.is_active,
-      public_key: publicKey
+      public_key: publicKey,
+      seller_address: sellerAddress,
+      active_channel: activeChannel ? {
+        channelId: activeChannel.channel_id,
+        txHash: activeChannel.tx_hash,
+        amount: activeChannel.amount,
+        consumed_tokens: activeChannel.consumed_tokens,
+        status: activeChannel.status
+      } : null
     };
 
     return NextResponse.json({
