@@ -6,6 +6,34 @@ import { NextRequest } from 'next/server';
 import { UserRepository, SessionRepository, User, PaymentChannelRepository, PAYMENT_CHANNEL_STATUS } from './database';
 import { secp256k1 } from '@noble/curves/secp256k1';
 
+// Utility function to validate private key format
+function isValidPrivateKey(privateKey: string): boolean {
+  try {
+    // Remove 0x prefix if present
+    const cleanKey = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey;
+    
+    // Check if it's a valid hex string of correct length (64 characters = 32 bytes)
+    if (!/^[0-9a-fA-F]{64}$/.test(cleanKey)) {
+      return false;
+    }
+    
+    // Try to generate public key to validate the private key
+    const privKeyBuffer = Buffer.from(cleanKey, 'hex');
+    secp256k1.getPublicKey(privKeyBuffer, false);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Utility function to generate public key from private key
+function generatePublicKeyFromPrivateKey(privateKey: string): string {
+  const cleanPrivateKey = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey;
+  const privKeyBuffer = Buffer.from(cleanPrivateKey, 'hex');
+  const publicKey = secp256k1.getPublicKey(privKeyBuffer, false);
+  return Buffer.from(publicKey).toString('hex');
+}
+
 // JWT secret - in production, use a strong secret from environment variables
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production'
@@ -14,8 +42,8 @@ const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 
 export interface JWTPayload {
   userId: number;
-  email: string;
   username: string;
+  publicKey?: string; // Updated to use public key instead of email
   sessionId: string;
 }
 
@@ -103,32 +131,7 @@ export class AuthService {
     }
   }
 
-  // Register new user
-  async register(email: string, username: string, password: string): Promise<{ user: User; token: string }> {
-    try {
-      const user = await this.userRepo.createUser({ email, username, password });
-      
-      // Create session
-      const sessionId = this.generateSessionId();
-      const expiresAt = new Date(Date.now() + SESSION_DURATION);
-      this.sessionRepo.createSession(user.id, sessionId, expiresAt);
-
-      // Create JWT token
-      const tokenPayload: JWTPayload = {
-        userId: user.id,
-        email: user.email,
-        username: user.username,
-        sessionId
-      };
-      const token = await this.createJWTToken(tokenPayload);
-
-      return { user, token };
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  // Login user
+  // Legacy login method (for backward compatibility)
   async login(emailOrUsername: string, password: string): Promise<{ user: User; token: string }> {
     // Try to find user by email first, then by username
     let user = this.userRepo.getUserByEmail(emailOrUsername);
@@ -157,8 +160,57 @@ export class AuthService {
     // Create JWT token
     const tokenPayload: JWTPayload = {
       userId: user.id,
-      email: user.email,
       username: user.username,
+      publicKey: user.public_key || undefined, // Handle null public_key
+      sessionId
+    };
+    const token = await this.createJWTToken(tokenPayload);
+
+    return { user, token };
+  }
+
+  // Login user with private key
+  async loginWithPrivateKey(privateKey: string): Promise<{ user: User; token: string }> {
+    // Validate private key format
+    if (!isValidPrivateKey(privateKey)) {
+      throw new Error('Invalid private key format');
+    }
+
+    // Generate public key from private key
+    const publicKey = generatePublicKeyFromPrivateKey(privateKey);
+
+    // Try to find user by public key
+    let user = this.userRepo.getUserByPublicKey(publicKey);
+
+    if (!user) {
+      // Auto-create user with public key if not exists
+      // Generate a more unique username using more characters from public key
+      let username = `user_${publicKey.slice(0, 12)}`; // Use 12 characters for better uniqueness
+      
+      // Check if username already exists and add suffix if needed
+      let counter = 1;
+      const originalUsername = username;
+      while (this.userRepo.getUserByUsername(username)) {
+        username = `${originalUsername}_${counter}`;
+        counter++;
+      }
+      
+      user = await this.userRepo.createUserFromPrivateKey({ username, public_key: publicKey });
+    }
+
+    // Update last login
+    this.userRepo.updateLastLogin(user.id);
+
+    // Create new session
+    const sessionId = this.generateSessionId();
+    const expiresAt = new Date(Date.now() + SESSION_DURATION);
+    this.sessionRepo.createSession(user.id, sessionId, expiresAt);
+
+    // Create JWT token
+    const tokenPayload: JWTPayload = {
+      userId: user.id,
+      username: user.username,
+      publicKey: publicKey,
       sessionId
     };
     const token = await this.createJWTToken(tokenPayload);
@@ -239,4 +291,14 @@ export async function requireAuth(request: NextRequest): Promise<User> {
   }
   
   return user;
+}
+
+// New utility function to validate private key
+export function validatePrivateKey(privateKey: string): boolean {
+  return isValidPrivateKey(privateKey);
+}
+
+// New utility function to get public key from private key  
+export function getPublicKeyFromPrivateKey(privateKey: string): string {
+  return generatePublicKeyFromPrivateKey(privateKey);
 }

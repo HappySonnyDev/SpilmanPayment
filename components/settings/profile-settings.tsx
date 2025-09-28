@@ -96,17 +96,20 @@ export const ProfileSettings: React.FC = () => {
               </p>
             </div>
 
-            <div className="border-t border-gray-200/70 dark:border-slate-700/60" />
-
-            {/* Email */}
-            <div className="flex items-center justify-between p-5">
-              <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                Email Address
-              </label>
-              <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                {user.email}
-              </p>
-            </div>
+            {/* Email - only show if user has email (legacy users) */}
+            {user.email && (
+              <>
+                <div className="border-t border-gray-200/70 dark:border-slate-700/60" />
+                <div className="flex items-center justify-between p-5">
+                  <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    Email Address
+                  </label>
+                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    {user.email}
+                  </p>
+                </div>
+              </>
+            )}
 
             <div className="border-t border-gray-200/70 dark:border-slate-700/60" />
 
@@ -143,6 +146,18 @@ export const ProfileSettings: React.FC = () => {
                   {user.is_active ? "Active" : "Inactive"}
                 </p>
               </div>
+            </div>
+
+            <div className="border-t border-gray-200/70 dark:border-slate-700/60" />
+
+            {/* User Public Key */}
+            <div className="flex items-center justify-between p-5">
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+            Public Key
+              </label>
+              <p className="text-sm font-mono text-slate-700 dark:text-slate-300 break-all max-w-xs text-right">
+                {user.public_key || "N/A"}
+              </p>
             </div>
           </div>
 

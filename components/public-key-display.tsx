@@ -1,19 +1,18 @@
 "use client";
 
 import React from "react";
-import { useUserInfo } from "@/lib/user-info-context";
+import { useAuth } from "@/components/auth/auth-context";
 
 export const PublicKeyDisplay: React.FC = () => {
-  const { userInfo } = useUserInfo();
-  const { publicKey } = userInfo;
+  const { user } = useAuth();
+  const serverPublicKey = user?.serverPublicKey;
   
-  const hasPublicKey = !!publicKey;
-  const publicKeyShort = publicKey ? `${publicKey.slice(0, 6)}...${publicKey.slice(-4)}` : null;
+  const hasServerPublicKey = !!serverPublicKey;
 
-  if (!hasPublicKey) {
+  if (!hasServerPublicKey) {
     return (
       <div className="text-sm text-slate-600 dark:text-slate-400">
-        No public key available
+        No server public key available
       </div>
     );
   }
@@ -25,7 +24,7 @@ export const PublicKeyDisplay: React.FC = () => {
           Server Public Key
         </label>
         <p className="text-sm font-medium text-slate-700 dark:text-slate-300 break-all">
-          {publicKey}
+          {serverPublicKey}
         </p>
       </div>
       <div>

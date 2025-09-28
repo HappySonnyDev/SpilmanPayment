@@ -1,23 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { AuthService, setAuthCookie } from '@/lib/auth';
+import { AuthService, setAuthCookie, validatePrivateKey } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
   try {
-    const { emailOrUsername, password } = await request.json();
+    const body = await request.json();
+    const { privateKey, emailOrUsername, password } = body;
 
-    // Validate input
-    if (!emailOrUsername || !password) {
+    const authService = new AuthService();
+    let user, token;
+
+    if (privateKey) {
+      // New private key authentication
+      if (!validatePrivateKey(privateKey)) {
+        return NextResponse.json(
+          { error: 'Invalid private key format' },
+          { status: 400 }
+        );
+      }
+
+      const result = await authService.loginWithPrivateKey(privateKey);
+      user = result.user;
+      token = result.token;
+    } else if (emailOrUsername && password) {
+      // Legacy email/password authentication
+      const result = await authService.login(emailOrUsername, password);
+      user = result.user;
+      token = result.token;
+    } else {
       return NextResponse.json(
-        { error: 'Email/username and password are required' },
+        { error: 'Either private key or email/username and password are required' },
         { status: 400 }
       );
     }
 
-    const authService = new AuthService();
-    const { user, token } = await authService.login(emailOrUsername, password);
-
     // Get public key and seller address
-    const publicKey = authService.getPublicKey();
+    const publicKey = user.public_key || authService.getPublicKey();
     const sellerAddress = await authService.getSellerAddress();
     
     // Get user's active payment channel
@@ -29,6 +46,7 @@ export async function POST(request: NextRequest) {
       email: user.email,
       username: user.username,
       created_at: user.created_at,
+      is_active: Boolean(user.is_active), // Ensure boolean conversion from SQLite integer
       public_key: publicKey,
       seller_address: sellerAddress,
       active_channel: activeChannel ? {
@@ -52,9 +70,9 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     if (error instanceof Error) {
-      if (error.message === 'Invalid credentials') {
+      if (error.message === 'Invalid credentials' || error.message === 'Invalid private key format') {
         return NextResponse.json(
-          { error: 'Invalid email/username or password' },
+          { error: 'Invalid credentials or private key' },
           { status: 401 }
         );
       }

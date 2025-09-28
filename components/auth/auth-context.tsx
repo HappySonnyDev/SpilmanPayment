@@ -10,9 +10,13 @@ import {
 import {
   User,
   loginUser,
+  loginWithPrivateKey as loginWithPrivateKeyAPI,
   registerUser,
   logoutUser,
   getCurrentUser,
+  isLoggedIn,
+  getStoredPrivateKey,
+  clearStoredCredentials,
 } from "@/lib/auth-client";
 import { useUserInfo } from "@/lib/user-info-context";
 
@@ -21,6 +25,7 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   login: (emailOrUsername: string, password: string) => Promise<void>;
+  loginWithPrivateKey: (privateKey: string) => Promise<void>;
   register: (
     email: string,
     username: string,
@@ -44,12 +49,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const checkAuth = async () => {
     try {
-      const user = await getCurrentUser();
-      setUser(user);
-      // Update public key state
-      if (user?.public_key) {
-        updatePublicKey(user.public_key);
+      // Check if there's a private key in localStorage
+      const storedPrivateKey = getStoredPrivateKey();
+      
+      if (storedPrivateKey) {
+        // If private key exists, get user info from server
+        try {
+          const userData = await getCurrentUser();
+          if (userData) {
+            setUser(userData);
+            // Update public key state
+            if (userData?.public_key) {
+              updatePublicKey(userData.public_key);
+            }
+          } else {
+            // If server doesn't return user info, clear invalid credentials
+            clearStoredCredentials();
+            setUser(null);
+            updatePublicKey(null);
+          }
+        } catch (error) {
+          // If request fails, clear invalid credentials
+          clearStoredCredentials();
+          setUser(null);
+          updatePublicKey(null);
+        }
       } else {
+        // No private key in localStorage, user is not logged in
+        setUser(null);
         updatePublicKey(null);
       }
     } catch {
@@ -66,6 +93,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Update public key state
     if (user?.public_key) {
       updatePublicKey(user.public_key);
+    }
+  };
+
+  const loginWithPrivateKey = async (privateKey: string) => {
+    const userData = await loginWithPrivateKeyAPI(privateKey);
+    
+    // Store private key in localStorage for persistent login
+    localStorage.setItem('private_key', privateKey);
+    
+    setUser(userData);
+    // Update public key state
+    if (userData?.public_key) {
+      updatePublicKey(userData.public_key);
     }
   };
 
@@ -88,6 +128,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // Continue with logout even if request fails
     }
+    
+    // Remove private key from localStorage
+    clearStoredCredentials();
+    
     setUser(null);
     updatePublicKey(null);
   };
@@ -100,6 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     isLoading,
     login,
+    loginWithPrivateKey,
     register,
     logout,
     refreshUser,

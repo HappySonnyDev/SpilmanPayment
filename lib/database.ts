@@ -21,7 +21,7 @@ export function getDatabase() {
 }
 
 // Database version for migrations
-const DATABASE_VERSION = 7; // Update to version 7 for tx_hash column
+const DATABASE_VERSION = 9; // Update to version 9 for nullable email/password fields
 
 // Initialize database tables
 function initializeDatabase() {
@@ -125,6 +125,12 @@ function runMigrations() {
   }
   if (currentVersion < 7) {
     migrateToVersion7();
+  }
+  if (currentVersion < 8) {
+    migrateToVersion8();
+  }
+  if (currentVersion < 9) {
+    migrateToVersion9();
   }
 
   // Update database version
@@ -354,12 +360,106 @@ function migrateToVersion7() {
   }
 }
 
+// Migration to version 8: Refactor users table for private key authentication
+function migrateToVersion8() {
+  console.log('Running migration to version 8: refactoring users table for private key authentication');
+  
+  try {
+    // Begin transaction
+    db.exec('BEGIN TRANSACTION');
+    
+    // Check if public_key column already exists
+    const pragmaStmt = db.prepare('PRAGMA table_info(users)');
+    const columns = pragmaStmt.all() as Array<{ name: string }>;
+    const hasPublicKeyColumn = columns.some(col => col.name === 'public_key');
+    
+    if (!hasPublicKeyColumn) {
+      // Add public_key column without UNIQUE constraint first
+      db.exec('ALTER TABLE users ADD COLUMN public_key TEXT');
+      
+      // Create index for public_key
+      db.exec('CREATE INDEX IF NOT EXISTS idx_users_public_key ON users (public_key)');
+      
+      console.log('Successfully added public_key column and index');
+    } else {
+      console.log('Public_key column already exists, skipping column addition');
+    }
+    
+    // Note: We keep email, username, and password_hash columns for backward compatibility
+    // During migration, existing users can still login with old credentials
+    // New users will use private key authentication
+    // The uniqueness will be enforced at the application level
+    
+    // Commit transaction
+    db.exec('COMMIT');
+    
+    console.log('Successfully completed migration to version 8');
+  } catch (error) {
+    console.error('Error during migration to version 8:', error);
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+// Migration to version 9: Make email and password_hash nullable for private key users
+function migrateToVersion9() {
+  console.log('Running migration to version 9: making email and password_hash nullable');
+  
+  try {
+    // SQLite doesn't support ALTER COLUMN, so we need to recreate the table
+    db.exec('BEGIN TRANSACTION');
+    
+    // Create new table with nullable email and password_hash
+    const createNewUsersTable = `
+      CREATE TABLE users_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT UNIQUE,
+        username TEXT UNIQUE NOT NULL,
+        password_hash TEXT,
+        public_key TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        is_active BOOLEAN DEFAULT 1
+      )
+    `;
+    
+    db.exec(createNewUsersTable);
+    
+    // Copy data from old table to new table
+    db.exec(`
+      INSERT INTO users_new (id, email, username, password_hash, public_key, created_at, updated_at, is_active)
+      SELECT id, email, username, password_hash, public_key, created_at, updated_at, is_active
+      FROM users
+    `);
+    
+    // Drop old table
+    db.exec('DROP TABLE users');
+    
+    // Rename new table
+    db.exec('ALTER TABLE users_new RENAME TO users');
+    
+    // Recreate indexes
+    db.exec('CREATE INDEX IF NOT EXISTS idx_users_email ON users (email)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_users_username ON users (username)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_users_public_key ON users (public_key)');
+    
+    db.exec('COMMIT');
+    
+    console.log('Successfully completed migration to version 9');
+  } catch (error) {
+    console.error('Error during migration to version 9:', error);
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 // User interface
 export interface User {
   id: number;
-  email: string;
+  email?: string | null; // Optional and nullable for private key users
   username: string;
-  password_hash: string;
+  password_hash?: string | null; // Optional and nullable for private key users
+  public_key?: string | null; // New primary identifier for private key users
   created_at: string;
   updated_at: string;
   is_active: boolean;
@@ -373,11 +473,18 @@ export interface Session {
   created_at: string;
 }
 
-// User creation interface
+// User creation interface - Legacy for backward compatibility
 export interface CreateUserData {
-  email: string;
+  email?: string;
   username: string;
-  password: string;
+  password?: string;
+  public_key?: string;
+}
+
+// New user creation interface for private key authentication
+export interface CreateUserFromPrivateKey {
+  username: string;
+  public_key: string;
 }
 
 // User database operations
@@ -389,23 +496,69 @@ export class UserRepository {
   }
 
   async createUser(userData: CreateUserData): Promise<User> {
-    const { email, username, password } = userData;
+    const { email, username, password, public_key } = userData;
     
-    // Hash password
-    const saltRounds = 12;
-    const password_hash = await bcrypt.hash(password, saltRounds);
+    if (public_key) {
+      // New private key authentication flow
+      const stmt = this.db.prepare(`
+        INSERT INTO users (username, public_key, is_active)
+        VALUES (?, ?, 1)
+      `);
+      
+      try {
+        const result = stmt.run(username, public_key);
+        return this.getUserById(result.lastInsertRowid as number)!;
+      } catch (error: unknown) {
+        if (error instanceof Error && 'code' in error && error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+          throw new Error('Username or public key already exists');
+        }
+        throw error;
+      }
+    } else if (email && password) {
+      // Legacy email/password authentication flow
+      const saltRounds = 12;
+      const password_hash = await bcrypt.hash(password, saltRounds);
 
+      const stmt = this.db.prepare(`
+        INSERT INTO users (email, username, password_hash)
+        VALUES (?, ?, ?)
+      `);
+
+      try {
+        const result = stmt.run(email, username, password_hash);
+        return this.getUserById(result.lastInsertRowid as number)!;
+      } catch (error: unknown) {
+        if (error instanceof Error && 'code' in error && error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+          throw new Error('Email or username already exists');
+        }
+        throw error;
+      }
+    } else {
+      throw new Error('Either public_key or email/password must be provided');
+    }
+  }
+
+  // New method for creating user from private key
+  async createUserFromPrivateKey(userData: CreateUserFromPrivateKey): Promise<User> {
+    const { username, public_key } = userData;
+    
+    // Check if public key already exists
+    const existingUser = this.getUserByPublicKey(public_key);
+    if (existingUser) {
+      throw new Error('Public key already exists');
+    }
+    
     const stmt = this.db.prepare(`
-      INSERT INTO users (email, username, password_hash)
-      VALUES (?, ?, ?)
+      INSERT INTO users (username, public_key, is_active)
+      VALUES (?, ?, 1)
     `);
 
     try {
-      const result = stmt.run(email, username, password_hash);
+      const result = stmt.run(username, public_key);
       return this.getUserById(result.lastInsertRowid as number)!;
     } catch (error: unknown) {
       if (error instanceof Error && 'code' in error && error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-        throw new Error('Email or username already exists');
+        throw new Error('Username already exists');
       }
       throw error;
     }
@@ -421,13 +574,21 @@ export class UserRepository {
     return stmt.get(email) as User | null;
   }
 
+  getUserByPublicKey(publicKey: string): User | null {
+    const stmt = this.db.prepare('SELECT * FROM users WHERE public_key = ?');
+    return stmt.get(publicKey) as User | null;
+  }
+
   getUserByUsername(username: string): User | null {
     const stmt = this.db.prepare('SELECT * FROM users WHERE username = ?');
     return stmt.get(username) as User | null;
   }
 
   async verifyPassword(user: User, password: string): Promise<boolean> {
-    return bcrypt.compare(password, user.password_hash);
+    if (!user.password_hash) {
+      return false; // User created with private key, no password to verify
+    }
+    return await bcrypt.compare(password, user.password_hash);
   }
 
   updateLastLogin(userId: number): void {
