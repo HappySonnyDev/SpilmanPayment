@@ -1,7 +1,15 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { streamText, UIMessage, convertToModelMessages } from "ai";
+import {
+  streamText,
+  UIMessage,
+  convertToModelMessages,
+  createUIMessageStream,
+  createUIMessageStreamResponse
+} from "ai";
 import { NextRequest } from "next/server";
 import { requireAuth } from "@/lib/auth";
+import { ChunkPaymentRepository } from "@/lib/database";
+import { getOrCreateTracker, generateChunkId, countTokens } from "@/lib/token-tracker";
 
 // Initialize OpenRouter provider
 const openrouter = createOpenAICompatible({
@@ -13,17 +21,74 @@ const openrouter = createOpenAICompatible({
 export async function POST(req: NextRequest) {
   try {
     // Require authentication
-    await requireAuth(req);
+    const user = await requireAuth(req);
+    const userId = user.id;
 
     const { messages }: { messages: UIMessage[] } = await req.json();
   
+    // Always generate a new session ID for each API call (each question)
+    const currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
-    const result = streamText({
-      model: openrouter("deepseek/deepseek-chat-v3.1:free"),
-      messages: convertToModelMessages(messages),
+    // Initialize token tracker for this session
+    const tokenTracker = getOrCreateTracker(userId, currentSessionId);
+    const chunkRepo = new ChunkPaymentRepository();
+    
+    console.log('Streaming started for session:', currentSessionId, 'User:', userId);
+    
+    // Create a UIMessageStream to include chunk payment data
+    const stream = createUIMessageStream({
+      execute: ({ writer }) => {
+        const result = streamText({
+          model: openrouter("deepseek/deepseek-chat-v3.1:free"),
+          messages: convertToModelMessages(messages),
+          onChunk: ({ chunk }) => {
+            // Track tokens for each chunk in real-time
+            if (chunk.type === 'text-delta' && chunk.text) {
+              const chunkId = generateChunkId();
+              const tokens = tokenTracker.addChunk(chunkId, chunk.text);
+              
+              // Store chunk payment record in database (unpaid initially)
+              try {
+                chunkRepo.createChunkPayment({
+                  chunk_id: chunkId,
+                  user_id: userId,
+                  session_id: currentSessionId,
+                  tokens_count: tokens,
+                  is_paid: false
+                });
+                
+                console.log(`New chunk created: ${chunkId} (${tokens} tokens)`);
+                
+                // Send chunk payment data to the client
+                writer.write({
+                  type: 'data-chunk-payment',
+                  data: {
+                    chunkId,
+                    tokens,
+                    sessionId: currentSessionId,
+                    isPaid: false
+                  },
+                  transient: true // Don't add to message history
+                });
+                
+              } catch (error) {
+                console.warn('Failed to store chunk payment:', error);
+              }
+            }
+          }
+        });
+        
+        // Merge the streamText result into our stream
+        writer.merge(result.toUIMessageStream());
+      }
     });
-
-    return result.toUIMessageStreamResponse();
+    
+    // Create the response with session header
+    const response = createUIMessageStreamResponse({ stream });
+    response.headers.set('X-Session-ID', currentSessionId);
+    
+    return response;
+    
   } catch (error) {
     console.error("Chat API error:", error);
 

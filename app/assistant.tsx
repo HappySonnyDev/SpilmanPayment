@@ -34,19 +34,41 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { User, BarChart3, CreditCard, LogOut, ChevronDown, Wallet } from "lucide-react";
+import { useChunkPayment } from "@/hooks/use-chunk-payment";
 
 export const Assistant = () => {
   const { user, logout } = useAuth();
+  const { payForChunk } = useChunkPayment();
   const [showAuthDialog, setShowAuthDialog] = useState(false);
   const [authDialogTab, setAuthDialogTab] = useState<'login' | 'register'>('login');
   const [pendingMessage, setPendingMessage] = useState('');
   const [showUserSettings, setShowUserSettings] = useState(false);
   const [userSettingsTab, setUserSettingsTab] = useState<'profile' | 'usage' | 'billing' | 'recharge'>('profile');
 
+  // Handle chunk payment data from streaming response
+  const handleChunkPaymentData = async (dataPart: { type: `data-${string}`; id?: string; data: unknown }) => {
+    console.log('🎯 Received chunk payment data:', dataPart);
+    
+    if (dataPart.type === 'data-chunk-payment') {
+      const data = dataPart.data as { chunkId: string; tokens: number; sessionId: string; isPaid: boolean };
+      const { chunkId, tokens } = data;
+      console.log(`📦 Processing chunk payment: ${chunkId} (${tokens} tokens)`);
+      
+      try {
+        // Automatically pay for the chunk
+        await payForChunk(chunkId);
+        console.log(`✅ Successfully paid for chunk: ${chunkId}`);
+      } catch (error) {
+        console.error(`❌ Failed to pay for chunk ${chunkId}:`, error);
+      }
+    }
+  };
+
   const runtime = useChatRuntime({
     transport: new AssistantChatTransport({
-      api: "/api/chat",
+      api: "/api/chat"
     }),
+    onData: handleChunkPaymentData
   });
 
   const handleAuthRequired = () => {
@@ -57,6 +79,12 @@ export const Assistant = () => {
   const handleUserMenuClick = (tab: 'profile' | 'usage' | 'billing' | 'recharge') => {
     setUserSettingsTab(tab);
     setShowUserSettings(true);
+  };
+
+  // Generate new session ID for each new question
+  const generateNewSessionId = () => {
+    // Session ID is now generated on the server side
+    return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   };
 
   // Submit pending message after authentication
@@ -166,6 +194,7 @@ export const Assistant = () => {
                   onAuthRequired={handleAuthRequired}
                   pendingMessage={pendingMessage}
                   setPendingMessage={setPendingMessage}
+                  onNewQuestion={generateNewSessionId}
                 />
               </div>
             </SidebarInset>

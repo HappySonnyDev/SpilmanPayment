@@ -21,7 +21,7 @@ export function getDatabase() {
 }
 
 // Database version for migrations
-const DATABASE_VERSION = 5; // Update to version 5 for consumed_tokens column
+const DATABASE_VERSION = 6; // Update to version 6 for chunk_payments table
 
 // Initialize database tables
 function initializeDatabase() {
@@ -119,6 +119,9 @@ function runMigrations() {
   }
   if (currentVersion < 5) {
     migrateToVersion5();
+  }
+  if (currentVersion < 6) {
+    migrateToVersion6();
   }
 
   // Update database version
@@ -271,6 +274,49 @@ function migrateToVersion5() {
   }
 }
 
+// Migration to version 6: Create chunk_payments table
+function migrateToVersion6() {
+  console.log('Running migration to version 6: creating chunk_payments table');
+  
+  try {
+    // Begin transaction
+    db.exec('BEGIN TRANSACTION');
+    
+    // Create chunk_payments table
+    const createChunkPaymentsTable = `
+      CREATE TABLE IF NOT EXISTS chunk_payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        chunk_id TEXT UNIQUE NOT NULL,
+        user_id INTEGER NOT NULL,
+        session_id TEXT NOT NULL,
+        channel_id TEXT,
+        tokens_count INTEGER NOT NULL,
+        is_paid INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        paid_at DATETIME,
+        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+      )
+    `;
+    
+    db.exec(createChunkPaymentsTable);
+    
+    // Create indexes for performance
+    db.exec('CREATE INDEX IF NOT EXISTS idx_chunk_payments_user_session ON chunk_payments (user_id, session_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_chunk_payments_chunk_id ON chunk_payments (chunk_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_chunk_payments_is_paid ON chunk_payments (is_paid)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_chunk_payments_created_at ON chunk_payments (created_at)');
+    
+    // Commit transaction
+    db.exec('COMMIT');
+    
+    console.log('Successfully created chunk_payments table and indexes');
+  } catch (error) {
+    console.error('Error during migration to version 6:', error);
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 // User interface
 export interface User {
   id: number;
@@ -418,6 +464,29 @@ export interface PaymentChannel {
   updated_at: string;
 }
 
+// Chunk Payment interface
+export interface ChunkPayment {
+  id: number;
+  chunk_id: string;
+  user_id: number;
+  session_id: string;
+  channel_id: string | null;
+  tokens_count: number;
+  is_paid: number; // SQLite stores boolean as integer (0 or 1)
+  created_at: string;
+  paid_at: string | null;
+}
+
+// Chunk Payment creation interface
+export interface CreateChunkPaymentData {
+  chunk_id: string;
+  user_id: number;
+  session_id: string;
+  channel_id?: string;
+  tokens_count: number;
+  is_paid?: boolean; // API accepts boolean, will be converted to integer internally
+}
+
 // Payment Channel creation interface
 export interface CreatePaymentChannelData {
   user_id: number;
@@ -554,5 +623,95 @@ export class PaymentChannelRepository {
     }
 
     return null;
+  }
+}
+
+// Chunk Payment database operations
+export class ChunkPaymentRepository {
+  private db: Database.Database;
+
+  constructor() {
+    this.db = getDatabase();
+  }
+
+  createChunkPayment(chunkData: CreateChunkPaymentData): ChunkPayment {
+    const { chunk_id, user_id, session_id, channel_id, tokens_count, is_paid } = chunkData;
+    
+    const stmt = this.db.prepare(`
+      INSERT INTO chunk_payments (chunk_id, user_id, session_id, channel_id, tokens_count, is_paid)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    try {
+      const paidFlag = is_paid ? 1 : 0; // Convert boolean to integer for SQLite
+      const result = stmt.run(chunk_id, user_id, session_id, channel_id || null, tokens_count, paidFlag);
+      return this.getChunkPaymentById(result.lastInsertRowid as number)!;
+    } catch (error: unknown) {
+      if (error instanceof Error && 'code' in error && error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+        throw new Error('Chunk payment with this ID already exists');
+      }
+      throw error;
+    }
+  }
+
+  getChunkPaymentById(id: number): ChunkPayment | null {
+    const stmt = this.db.prepare('SELECT * FROM chunk_payments WHERE id = ?');
+    return stmt.get(id) as ChunkPayment | null;
+  }
+
+  getChunkPaymentByChunkId(chunkId: string): ChunkPayment | null {
+    const stmt = this.db.prepare('SELECT * FROM chunk_payments WHERE chunk_id = ?');
+    return stmt.get(chunkId) as ChunkPayment | null;
+  }
+
+  getUnpaidChunksByUserSession(userId: number, sessionId: string): ChunkPayment[] {
+    const stmt = this.db.prepare('SELECT * FROM chunk_payments WHERE user_id = ? AND session_id = ? AND is_paid = 0 ORDER BY created_at ASC');
+    return stmt.all(userId, sessionId) as ChunkPayment[];
+  }
+
+  getChunkPaymentsByUserSession(userId: number, sessionId: string): ChunkPayment[] {
+    const stmt = this.db.prepare('SELECT * FROM chunk_payments WHERE user_id = ? AND session_id = ? ORDER BY created_at ASC');
+    return stmt.all(userId, sessionId) as ChunkPayment[];
+  }
+
+  markChunksAsPaid(chunkIds: string[], channelId: string): void {
+    const transaction = this.db.transaction(() => {
+      const stmt = this.db.prepare(`
+        UPDATE chunk_payments 
+        SET is_paid = 1, paid_at = CURRENT_TIMESTAMP, channel_id = ?
+        WHERE chunk_id = ?
+      `);
+      
+      for (const chunkId of chunkIds) {
+        stmt.run(channelId, chunkId);
+      }
+    });
+    
+    transaction();
+  }
+
+  getUnpaidTokensCount(userId: number, sessionId: string): number {
+    const stmt = this.db.prepare('SELECT SUM(tokens_count) as total FROM chunk_payments WHERE user_id = ? AND session_id = ? AND is_paid = 0');
+    const result = stmt.get(userId, sessionId) as { total: number | null };
+    return result.total || 0;
+  }
+
+  getUserTotalUnpaidTokens(userId: number): number {
+    const stmt = this.db.prepare('SELECT SUM(tokens_count) as total FROM chunk_payments WHERE user_id = ? AND is_paid = 0');
+    const result = stmt.get(userId) as { total: number | null };
+    return result.total || 0;
+  }
+
+  deleteOldUnpaidChunks(olderThanHours: number = 24): number {
+    const cutoffTime = new Date(Date.now() - (olderThanHours * 60 * 60 * 1000)).toISOString();
+    const stmt = this.db.prepare('DELETE FROM chunk_payments WHERE is_paid = 0 AND created_at < ?');
+    const result = stmt.run(cutoffTime);
+    return result.changes;
+  }
+
+  getLatestSessionForUser(userId: number): string | null {
+    const stmt = this.db.prepare('SELECT session_id FROM chunk_payments WHERE user_id = ? ORDER BY created_at DESC LIMIT 1');
+    const result = stmt.get(userId) as { session_id: string } | null;
+    return result?.session_id || null;
   }
 }

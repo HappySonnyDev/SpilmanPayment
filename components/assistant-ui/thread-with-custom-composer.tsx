@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { LazyMotion, MotionConfig, domAnimation } from "motion/react";
 import * as m from "motion/react-m";
 import { AuthAwareComposer } from "@/components/assistant-ui/auth-aware-composer";
+import { ChunkAwareComposer } from "@/components/assistant-ui/chunk-aware-composer";
 import { useAuth } from '@/components/auth/auth-context';
 import { useAssistantRuntime } from "@assistant-ui/react";
 
@@ -36,6 +37,7 @@ interface ThreadWithCustomComposerProps {
   onAuthRequired: () => void;
   pendingMessage: string;
   setPendingMessage: (message: string) => void;
+  onNewQuestion: () => string;
 }
 
 const ThreadScrollToBottom: React.FC = () => {
@@ -129,6 +131,7 @@ export const ThreadWithCustomComposer: FC<ThreadWithCustomComposerProps> = ({
   onAuthRequired,
   pendingMessage,
   setPendingMessage,
+  onNewQuestion,
 }) => {
   return (
     <LazyMotion features={domAnimation}>
@@ -160,10 +163,11 @@ export const ThreadWithCustomComposer: FC<ThreadWithCustomComposerProps> = ({
                   setPendingMessage={setPendingMessage}
                 />
               </ThreadPrimitive.Empty>
-              <AuthAwareComposer 
+              <ChunkAwareComposer 
                 onAuthRequired={onAuthRequired}
                 pendingMessage={pendingMessage}
                 setPendingMessage={setPendingMessage}
+                onNewQuestion={onNewQuestion}
               />
             </div>
           </ThreadPrimitive.Viewport>
