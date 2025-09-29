@@ -595,6 +595,18 @@ export class UserRepository {
     const stmt = this.db.prepare('UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
     stmt.run(userId);
   }
+
+  // Admin method to get all users
+  getAllUsers(): User[] {
+    const stmt = this.db.prepare('SELECT * FROM users ORDER BY created_at DESC');
+    return stmt.all() as User[];
+  }
+
+  // Admin method to update user status
+  updateUserStatus(userId: number, is_active: boolean): void {
+    const stmt = this.db.prepare('UPDATE users SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+    stmt.run(is_active ? 1 : 0, userId);
+  }
 }
 
 // Session database operations
@@ -834,6 +846,24 @@ export class PaymentChannelRepository {
 
     return null;
   }
+
+  // Admin method to get all payment channels
+  getAllPaymentChannels(): PaymentChannel[] {
+    const stmt = this.db.prepare('SELECT * FROM payment_channels ORDER BY created_at DESC');
+    return stmt.all() as PaymentChannel[];
+  }
+
+  // Admin method to update channel status by ID
+  updatePaymentChannelStatusById(channelId: number, status: PaymentChannelStatus): PaymentChannel | null {
+    const stmt = this.db.prepare(`
+      UPDATE payment_channels 
+      SET status = ?, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = ?
+    `);
+    
+    stmt.run(status, channelId);
+    return this.getPaymentChannelById(channelId);
+  }
 }
 
 // Chunk Payment database operations
@@ -919,11 +949,12 @@ export class ChunkPaymentRepository {
     return result.total || 0;
   }
 
-  // Get cumulative tokens (paid + unpaid) for a payment channel
-  getChannelCumulativeTokens(channelId: string): number {
-    const stmt = this.db.prepare('SELECT SUM(tokens_count) as total FROM chunk_payments WHERE channel_id = ? OR channel_id IS NULL');
+  // Get cumulative tokens for a payment channel (including current chunk)
+  getChannelCumulativeTokensWithCurrent(channelId: string, currentTokens: number = 0): number {
+    const stmt = this.db.prepare('SELECT SUM(tokens_count) as total FROM chunk_payments WHERE channel_id = ?');
     const result = stmt.get(channelId) as { total: number | null };
-    return result.total || 0;
+    const existingTokens = result.total || 0;
+    return existingTokens + currentTokens;
   }
 
   deleteOldUnpaidChunks(olderThanHours: number = 24): number {

@@ -69,17 +69,67 @@ export const Assistant = () => {
       console.log(`   - Cumulative Payment: ${cumulativePayment} CKB`);
       console.log(`   - Remaining Balance: ${remainingBalance} CKB`);
       
+      // Emit custom event for RealTimeTokenMonitor
+      const tokenUpdateEvent = new CustomEvent('tokenStreamUpdate', {
+        detail: {
+          chunkId,
+          tokens,
+          cumulativePayment,
+          remainingBalance,
+          channelId,
+          channelTotalAmount
+        }
+      });
+      window.dispatchEvent(tokenUpdateEvent);
+      
       try {
+        console.log(`🔄 Attempting automatic payment for chunk: ${chunkId}`);
         // Automatically pay for the chunk with enhanced payment info
-        await payForChunk(chunkId, {
+        const paymentResult = await payForChunk(chunkId, {
           cumulativePayment,
           remainingBalance,
           channelId,
           tokens
         });
         console.log(`✅ Successfully paid for chunk: ${chunkId}`);
+        
+        // Emit payment success event for the composer to update payment records
+        const paymentSuccessEvent = new CustomEvent('chunkPaymentSuccess', {
+          detail: {
+            chunkId,
+            tokens,
+            paidAmount: cumulativePayment,
+            remainingAmount: remainingBalance,
+            timestamp: new Date().toISOString(),
+            transactionData: paymentResult.transactionData
+          }
+        });
+        window.dispatchEvent(paymentSuccessEvent);
+        
       } catch (error) {
         console.error(`❌ Failed to pay for chunk ${chunkId}:`, error);
+        // Let's try the simpler payment method as fallback
+        try {
+          console.log(`🔄 Trying fallback payment for chunk: ${chunkId}`);
+          const fallbackResult = await payForChunk(chunkId);
+          console.log(`✅ Fallback payment successful for chunk: ${chunkId}`);
+          
+          // Emit payment success event for fallback payment too
+          const paymentSuccessEvent = new CustomEvent('chunkPaymentSuccess', {
+            detail: {
+              chunkId,
+              tokens,
+              paidAmount: cumulativePayment,
+              remainingAmount: remainingBalance,
+              timestamp: new Date().toISOString(),
+              transactionData: fallbackResult.transactionData
+            }
+          });
+          window.dispatchEvent(paymentSuccessEvent);
+          
+        } catch (fallbackError) {
+          console.error(`❌ Fallback payment also failed for chunk ${chunkId}:`, fallbackError);
+        }
       }
     }
   };
@@ -209,7 +259,7 @@ export const Assistant = () => {
                   )}
                 </div>
               </header>
-              <div className="flex-1 overflow-hidden">
+              <div className="flex-1 overflow-hidden relative">
                 <ThreadWithCustomComposer 
                   onAuthRequired={handleAuthRequired}
                   pendingMessage={pendingMessage}
@@ -226,7 +276,6 @@ export const Assistant = () => {
       <AuthDialog 
         open={showAuthDialog} 
         onOpenChange={setShowAuthDialog}
-        defaultTab={authDialogTab}
       />
       
       {/* User Settings Dialog */}

@@ -100,6 +100,9 @@ export async function POST(request: NextRequest) {
     // In a real implementation, you might want to mark it as "pending" until the transaction is confirmed
     chunkRepo.markChunksAsPaid([chunkId], paymentInfo.channelId);
 
+    // Note: consumed_tokens is updated during chat streaming, not during payment
+    // Payment status is tracked separately from consumption
+
     return NextResponse.json({
       success: true,
       message: `Successfully processed payment for chunk ${chunkId}`,
@@ -109,6 +112,7 @@ export async function POST(request: NextRequest) {
         sessionId: chunk.session_id,
         cumulativePayment: paymentInfo.cumulativePayment,
         remainingBalance: paymentInfo.remainingBalance,
+        remainingTokens: paymentInfo.remainingBalance, // For consistency with other payment endpoints
         transactionStored: true
       }
     });

@@ -2,15 +2,6 @@
 
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Progress } from "@/components/ui/progress";
-import { Badge } from "@/components/ui/badge";
 import { Star, Activity } from "lucide-react";
 
 interface PaymentChannel {
@@ -31,11 +22,16 @@ export const UsageSettings: React.FC = () => {
   const [selectedChannelId, setSelectedChannelId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<object | null>(null);
+  // Removed unpaidTokens state - Usage page now relies on database consumed_tokens
 
   // Fetch payment channels on component mount
   useEffect(() => {
     fetchPaymentChannels();
   }, []);
+
+  // Remove auto-refresh to avoid unnecessary API calls
+  // Only refresh when user explicitly clicks the refresh button
 
   // Auto-select default channel when channels are loaded
   useEffect(() => {
@@ -64,6 +60,7 @@ export const UsageSettings: React.FC = () => {
       
       const result = await response.json();
       setChannels(result.data.channels);
+      
     } catch (error) {
       console.error('Error fetching payment channels:', error);
       alert('Failed to load payment channels');
@@ -96,6 +93,21 @@ export const UsageSettings: React.FC = () => {
       alert('Failed to set as default: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const fetchDebugInfo = async () => {
+    try {
+      const response = await fetch('/api/debug/payment-status');
+      if (response.ok) {
+        const data = await response.json();
+        setDebugInfo(data.debug);
+        console.log('Debug Info:', data.debug);
+      } else {
+        console.error('Failed to fetch debug info');
+      }
+    } catch (error) {
+      console.error('Error fetching debug info:', error);
     }
   };
 
@@ -172,38 +184,59 @@ export const UsageSettings: React.FC = () => {
       <div className="mb-6 flex items-center justify-between">
         <h3 className="text-lg font-semibold">Usage Statistics</h3>
         
-        {/* Channel Selector */}
         <div className="flex items-center space-x-3">
+          {/* Debug Button */}
+          <Button
+            onClick={fetchDebugInfo}
+            size="sm"
+            variant="secondary"
+          >
+            Debug
+          </Button>
+          
+          {/* Refresh Button */}
+          <Button
+            onClick={fetchPaymentChannels}
+            disabled={isLoading}
+            size="sm"
+            variant="outline"
+          >
+            {isLoading ? 'Refreshing...' : 'Refresh Data'}
+          </Button>
+          
+          {/* Channel Selector */}
           <span className="text-sm font-medium text-slate-600 dark:text-slate-400">
             Channel:
           </span>
-          <Select value={selectedChannelId} onValueChange={setSelectedChannelId}>
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder="Select a channel" />
-            </SelectTrigger>
-            <SelectContent>
-              {activeChannels.map((channel) => (
-                <SelectItem key={channel.channelId} value={channel.channelId}>
-                  <div className="flex items-center space-x-2">
-                    <span className="font-mono text-xs">
-                      ...{channel.channelId.slice(-6)}
-                    </span>
-                    <span className="text-sm">
-                      {channel.amount.toLocaleString()} CKB
-                    </span>
-                    {channel.isDefault && (
-                      <Star className="h-3 w-3 text-yellow-500" />
-                    )}
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <select 
+            value={selectedChannelId} 
+            onChange={(e) => setSelectedChannelId(e.target.value)}
+            className="w-48 px-3 py-2 border border-gray-300 rounded-md text-sm dark:border-gray-600 dark:bg-gray-800"
+          >
+            <option value="">Select a channel</option>
+            {activeChannels.map((channel) => (
+              <option key={channel.channelId} value={channel.channelId}>
+                ...{channel.channelId.slice(-6)} - {channel.amount.toLocaleString()} CKB
+                {channel.isDefault ? ' ⭐' : ''}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
       {selectedChannel && stats && (
         <div className="space-y-6">
+          {/* Debug Info Panel */}
+          {debugInfo && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
+              <h4 className="text-sm font-semibold text-red-800 dark:text-red-300 mb-2">
+                Debug Information
+              </h4>
+              <pre className="text-xs text-red-700 dark:text-red-400 overflow-auto">
+                {JSON.stringify(debugInfo, null, 2)}
+              </pre>
+            </div>
+          )}
           {/* Channel Info Header */}
           <div className="rounded-lg border border-gray-100/30 bg-gradient-to-r from-blue-50 to-indigo-50 p-6 dark:border-slate-700/40 dark:from-blue-900/20 dark:to-indigo-900/20">
             <div className="flex items-center justify-between mb-4">
@@ -212,10 +245,10 @@ export const UsageSettings: React.FC = () => {
                   Channel Overview
                 </h4>
                 {selectedChannel.isDefault && (
-                  <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
+                  <span className="inline-flex rounded-full px-3 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
                     <Star className="h-3 w-3 mr-1" />
                     Default
-                  </Badge>
+                  </span>
                 )}
               </div>
               
@@ -270,7 +303,12 @@ export const UsageSettings: React.FC = () => {
               </span>
             </div>
             
-            <Progress value={stats.usagePercentage} className="h-3 mb-2" />
+            <div className="w-full bg-gray-200 rounded-full h-3 mb-2 dark:bg-gray-700">
+              <div 
+                className="bg-blue-600 h-3 rounded-full transition-all duration-300" 
+                style={{ width: `${Math.min(stats.usagePercentage, 100)}%` }}
+              ></div>
+            </div>
             
             <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
               <span>0</span>

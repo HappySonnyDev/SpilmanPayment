@@ -59,13 +59,8 @@ export async function POST(req: NextRequest) {
       // Mark all unpaid chunks as paid
       chunkRepo.markChunksAsPaid(chunkIds, defaultChannel.channel_id);
       
-      // Update channel consumed tokens
-      const updateStmt = db.prepare(`
-        UPDATE payment_channels 
-        SET consumed_tokens = consumed_tokens + ?, updated_at = CURRENT_TIMESTAMP 
-        WHERE channel_id = ?
-      `);
-      updateStmt.run(unpaidTokensCount, defaultChannel.channel_id);
+      // Note: consumed_tokens is updated during chat streaming, not during payment
+      // Payment status is tracked separately from consumption
       
       return NextResponse.json({
         success: true,
