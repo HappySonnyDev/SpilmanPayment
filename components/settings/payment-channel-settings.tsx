@@ -455,7 +455,7 @@ export const PaymentChannelSettings: React.FC = () => {
                             Tokens
                           </label>
                           <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg font-mono text-xs text-slate-700 dark:text-slate-300">
-                            {channel.amount.toLocaleString()}
+                            {(channel.amount * 0.01).toLocaleString()}
                           </div>
                         </div>
                         <div>

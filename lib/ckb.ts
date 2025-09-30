@@ -151,6 +151,7 @@ export const createPaymentChannel = async ({
   });
   await fundingTx.completeInputsByCapacity(buyerSigner);
   await fundingTx.completeFeeBy(buyerSigner, 1400);
+  console.log(jsonStr(fundingTx),'fundingTx===========');
   const fundingTxHash = fundingTx.hash();
   console.log(`📋 Funding transaction hash calculated: ${fundingTxHash}`);
 

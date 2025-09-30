@@ -722,8 +722,8 @@ export interface ChunkPayment {
   channel_id: string | null;
   tokens_count: number;
   is_paid: number; // SQLite stores boolean as integer (0 or 1)
-  cumulative_payment: number | null; // Payment amount accumulated
-  remaining_balance: number | null; // Remaining balance in channel
+  cumulative_payment: number | null; // Payment amount in CKB accumulated
+  remaining_balance: number | null; // Remaining balance in CKB in channel
   transaction_data: string | null; // JSON string of transaction data
   buyer_signature: string | null; // Buyer signature for the transaction
   created_at: string;

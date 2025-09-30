@@ -120,7 +120,8 @@ export async function POST(req: NextRequest) {
                 // Calculate cumulative payment using session tracking to avoid race conditions
                 // This represents what the user should pay in total for all chunks in this channel
                 const cumulativeTokens = existingCumulativeTokens + sessionCumulativeTokens;
-                const cumulativePayment = cumulativeTokens; // 1:1 ratio CKB to tokens
+                // Convert tokens to CKB for payment: 1 Token = 100 CKB (since 1 CKB = 0.01 Token)
+                const cumulativePayment = cumulativeTokens * 100; // Convert tokens to CKB
                 const remainingBalance = defaultChannel.amount - cumulativePayment;
                 
                 console.log(`Payment Channel ${defaultChannel.channel_id}: Session tokens so far: ${sessionCumulativeTokens}, Total cumulative: ${cumulativeTokens}`);

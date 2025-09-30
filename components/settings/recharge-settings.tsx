@@ -36,7 +36,7 @@ interface PaymentChannelData {
 }
 
 export const RechargeSettings: React.FC = () => {
-  const [selectedAmount, setSelectedAmount] = useState<number>(1000); // Default to 1000 CKB
+  const [selectedAmount, setSelectedAmount] = useState<number>(100000); // Default to 100000 CKB
   const [selectedDuration, setSelectedDuration] = useState<number>(1); // Default to 1 day
   const [isCreating, setIsCreating] = useState(false);
   const [paymentData, setPaymentData] = useState<PaymentChannelData | null>(
@@ -46,9 +46,9 @@ export const RechargeSettings: React.FC = () => {
   const { user } = useAuth();
 
   const amounts = [
-    { value: 1000, label: "1000 CKB" },
-    { value: 2000, label: "2000 CKB" },
-    { value: 3000, label: "3000 CKB" },
+    { value: 100000, label: "100000 CKB" },
+    { value: 200000, label: "200000 CKB" },
+    { value: 300000, label: "300000 CKB" },
   ];
 
   const durations = [
@@ -57,9 +57,9 @@ export const RechargeSettings: React.FC = () => {
     { value: 7, label: "7 days" },
   ];
 
-  // Calculate tokens based on pricing: 1000 CKB = 1000 tokens
+  // Calculate tokens based on pricing: 1 CKB = 0.01 Token
   const calculateTokens = (ckbAmount: number) => {
-    return ckbAmount; // 1:1 ratio
+    return ckbAmount * 0.01; // 1 CKB = 0.01 Token
   };
 
   const tokenAmount = calculateTokens(selectedAmount);
@@ -427,7 +427,7 @@ export const RechargeSettings: React.FC = () => {
           </div>
           <div className="mt-4 text-center">
             <p className="text-sm text-slate-600 dark:text-slate-400">
-              Rate: <span className="font-semibold">1 CKB = 1 Token</span>
+              Rate: <span className="font-semibold">1 CKB = 0.01 Token</span>
             </p>
           </div>
         </div>

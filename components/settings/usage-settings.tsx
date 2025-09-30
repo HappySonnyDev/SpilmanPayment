@@ -116,7 +116,7 @@ export const UsageSettings: React.FC = () => {
 
   // Calculate usage statistics
   const getUsageStats = (channel: PaymentChannel) => {
-    const totalTokens = channel.amount; // 1:1 ratio CKB to tokens
+    const totalTokens = channel.amount * 0.01; // 1 CKB = 0.01 Token conversion
     const consumedTokens = channel.consumedTokens;
     const remainingTokens = totalTokens - consumedTokens;
     const usagePercentage = (consumedTokens / totalTokens) * 100;

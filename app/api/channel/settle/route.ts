@@ -56,6 +56,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    console.log("💳 Channel information:", {
+      channelId: channel.channel_id,
+      originalAmount: channel.amount,
+      consumedTokens: channel.consumed_tokens,
+      remainingAmount: channel.amount - channel.consumed_tokens,
+      status: channel.status,
+    });
+
     // Get all chunk payments for this channel to find the latest one
     // Use a raw database query since we need to access the database directly
     const { getDatabase } = await import("@/lib/database");
@@ -75,6 +83,16 @@ export async function POST(request: NextRequest) {
 
     // Find the latest chunk payment
     const latestChunk = chunkPayments[0];
+
+    console.log("📦 Latest chunk information:", {
+      chunkId: latestChunk.chunk_id,
+      tokensCount: latestChunk.tokens_count,
+      isPaid: Boolean(latestChunk.is_paid),
+      cumulativePayment: latestChunk.cumulative_payment,
+      remainingBalance: latestChunk.remaining_balance,
+      hasTransactionData: Boolean(latestChunk.transaction_data),
+      hasBuyerSignature: Boolean(latestChunk.buyer_signature),
+    });
 
     // Check if the latest chunk is paid
     if (!latestChunk.is_paid) {
@@ -109,7 +127,9 @@ export async function POST(request: NextRequest) {
     try {
       // Recover the transaction from transaction data
       const transaction = ccc.Transaction.from(transactionData);
+      console.log("Transaction服务端:", jsonStr(transaction));
       const transactionHash = transaction.hash();
+      console.log("TransactionHash服务端:", transactionHash);
       const messageHash = getMessageHashFromTx(transactionHash);
 
       // Generate seller signature
@@ -136,7 +156,7 @@ export async function POST(request: NextRequest) {
 
       // Submit the transaction to CKB network
       const client = buildClient("devnet");
-      console.log(jsonStr(transaction), "transaction-=");
+      console.log(jsonStr(transaction), "transaction");
       const txHash = await client.sendTransaction(transaction);
 
       console.log(
