@@ -172,37 +172,43 @@ export const PaymentChannelSettings: React.FC = () => {
     }
   };
 
-  const handleChannelAction = async (channelId: string, action: 'activate' | 'close') => {
+  const handleChannelAction = async (channelId: string, action: 'activate' | 'settle') => {
     try {
-
-    //   setActionLoading(channelId);
+      setActionLoading(channelId);
       
-    //   const response = await fetch('/api/channel/update', {
-    //     method: 'POST',
-    //     headers: {
-    //       'Content-Type': 'application/json',
-    //     },
-    //     body: JSON.stringify({
-    //       channelId,
-    //       action,
-    //     }),
-    //   });
+      if (action === 'settle') {
+        // Call the settlement API
+        const response = await fetch('/api/channel/settle', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            channelId,
+          }),
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to settle channel');
+        }
+        
+        const result = await response.json();
+        alert(
+          `Channel settled successfully!\n` +
+          `Transaction Hash: ${result.txHash}\n` +
+          `Channel Status: ${result.channelStatus}`
+        );
+        
+        // Refresh the channels list
+        await fetchPaymentChannels();
+      }
       
-    //   if (!response.ok) {
-    //     const errorData = await response.json();
-    //     throw new Error(errorData.error || `Failed to ${action} channel`);
-    //   }
-      
-    //   const result = await response.json();
-    //   alert(`Channel ${action}d successfully!`);
-      
-    //   // Refresh the channels list
-    //   await fetchPaymentChannels();
     } catch (error) {
-    //   console.error(`Error ${action}ing channel:`, error);
-    //   alert(`Failed to ${action} channel: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error(`Error ${action}ing channel:`, error);
+      alert(`Failed to ${action} channel: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
-    //   setActionLoading(null);
+      setActionLoading(null);
     }
   };
 
@@ -257,6 +263,12 @@ export const PaymentChannelSettings: React.FC = () => {
       case 3: // Invalid
         return (
           <span className={`${baseClasses} bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400`}>
+            {statusText}
+          </span>
+        );
+      case 4: // Settled
+        return (
+          <span className={`${baseClasses} bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400`}>
             {statusText}
           </span>
         );
@@ -329,16 +341,16 @@ export const PaymentChannelSettings: React.FC = () => {
               {channel.isDefault ? '✓ Already Default' : 'Set as Default'}
             </DropdownMenuItem>
             <DropdownMenuItem
-              onClick={() => handleChannelAction(channel.channelId, 'close')}
+              onClick={() => handleChannelAction(channel.channelId, 'settle')}
               disabled={isLoading}
               className="text-red-600 focus:text-red-600"
             >
-              Close Channel
+              Settle Channel
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       );
-    } else { // Invalid
+    } else { // Invalid or Settled - No actions available
       return (
         <span className="text-sm text-gray-500 dark:text-gray-400">
           {/* No actions available */}

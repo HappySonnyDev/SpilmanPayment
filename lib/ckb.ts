@@ -286,3 +286,15 @@ export const jsonStr = (obj: unknown) => {
     return value;
   });
 };
+
+export const createWitnessData = (
+    buyerSignature: Uint8Array,
+    sellerSignature: Uint8Array
+  ): Uint8Array => {
+    const witnessData = new Uint8Array(132);
+    witnessData.set(buyerSignature, 0);    // buyer signature at offset 0
+    witnessData.set(sellerSignature, 65);  // seller signature at offset 65
+    witnessData[130] = 0; // buyer pubkey index
+    witnessData[131] = 1; // seller pubkey index
+    return witnessData;
+  };

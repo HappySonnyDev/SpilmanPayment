@@ -21,7 +21,7 @@ export function getDatabase() {
 }
 
 // Database version for migrations
-const DATABASE_VERSION = 9; // Update to version 9 for nullable email/password fields
+const DATABASE_VERSION = 10; // Update to version 10 for payment transaction data table
 
 // Initialize database tables
 function initializeDatabase() {
@@ -131,6 +131,9 @@ function runMigrations() {
   }
   if (currentVersion < 9) {
     migrateToVersion9();
+  }
+  if (currentVersion < 10) {
+    migrateToVersion10();
   }
 
   // Update database version
@@ -453,6 +456,40 @@ function migrateToVersion9() {
   }
 }
 
+// Migration to version 10: Add payment transaction fields to chunk_payments table
+function migrateToVersion10() {
+  console.log('Running migration to version 10: adding payment transaction fields to chunk_payments');
+  
+  try {
+    // Check if the new columns already exist
+    const pragmaStmt = db.prepare('PRAGMA table_info(chunk_payments)');
+    const columns = pragmaStmt.all() as Array<{ name: string }>;
+    const hasTransactionFields = columns.some(col => col.name === 'cumulative_payment');
+    
+    if (!hasTransactionFields) {
+      // Begin transaction
+      db.exec('BEGIN TRANSACTION');
+      
+      // Add new columns for payment transaction data
+      db.exec('ALTER TABLE chunk_payments ADD COLUMN cumulative_payment INTEGER');
+      db.exec('ALTER TABLE chunk_payments ADD COLUMN remaining_balance INTEGER');
+      db.exec('ALTER TABLE chunk_payments ADD COLUMN transaction_data TEXT');
+      db.exec('ALTER TABLE chunk_payments ADD COLUMN buyer_signature TEXT');
+      
+      // Commit transaction
+      db.exec('COMMIT');
+      
+      console.log('Successfully added payment transaction fields to chunk_payments');
+    } else {
+      console.log('Payment transaction fields already exist, skipping migration');
+    }
+  } catch (error) {
+    console.error('Error during migration to version 10:', error);
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 // User interface
 export interface User {
   id: number;
@@ -653,6 +690,7 @@ export const PAYMENT_CHANNEL_STATUS = {
   INACTIVE: 1,    // 未激活
   ACTIVE: 2,      // 已激活  
   INVALID: 3,     // 已作废
+  SETTLED: 4,     // 已结算
 } as const;
 
 export type PaymentChannelStatus = typeof PAYMENT_CHANNEL_STATUS[keyof typeof PAYMENT_CHANNEL_STATUS];
@@ -684,6 +722,10 @@ export interface ChunkPayment {
   channel_id: string | null;
   tokens_count: number;
   is_paid: number; // SQLite stores boolean as integer (0 or 1)
+  cumulative_payment: number | null; // Payment amount accumulated
+  remaining_balance: number | null; // Remaining balance in channel
+  transaction_data: string | null; // JSON string of transaction data
+  buyer_signature: string | null; // Buyer signature for the transaction
   created_at: string;
   paid_at: string | null;
 }
@@ -928,6 +970,39 @@ export class ChunkPaymentRepository {
     });
     
     transaction();
+  }
+
+  // Update chunk payment with transaction data from pay-enhanced
+  updateChunkPaymentWithTransactionData(
+    chunkId: string, 
+    channelId: string, 
+    cumulativePayment: number, 
+    remainingBalance: number, 
+    transactionData: Record<string, unknown>, 
+    buyerSignature: string
+  ): ChunkPayment | null {
+    const stmt = this.db.prepare(`
+      UPDATE chunk_payments 
+      SET is_paid = 1, 
+          paid_at = CURRENT_TIMESTAMP, 
+          channel_id = ?,
+          cumulative_payment = ?,
+          remaining_balance = ?,
+          transaction_data = ?,
+          buyer_signature = ?
+      WHERE chunk_id = ?
+    `);
+    
+    stmt.run(
+      channelId, 
+      cumulativePayment, 
+      remainingBalance, 
+      JSON.stringify(transactionData), 
+      buyerSignature, 
+      chunkId
+    );
+    
+    return this.getChunkPaymentByChunkId(chunkId);
   }
 
   getUnpaidTokensCount(userId: number, sessionId: string): number {

@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useUserInfo } from "@/lib/user-info-context";
+import { useAuth } from "@/components/auth/auth-context";
 import { createPaymentChannel, DEVNET_SCRIPTS, jsonStr } from "@/lib/ckb";
 import { ccc } from "@ckb-ccc/core";
 import { executePayNow } from "@/lib/payment-utils";
@@ -42,6 +43,7 @@ export const RechargeSettings: React.FC = () => {
     null,
   );
   const { userInfo } = useUserInfo();
+  const { user } = useAuth();
 
   const amounts = [
     { value: 1000, label: "1000 CKB" },
@@ -66,10 +68,10 @@ export const RechargeSettings: React.FC = () => {
     try {
       setIsCreating(true);
 
-      // Get seller public key from state management
-      const sellerPublicKey = userInfo.publicKey;
+      // Get seller public key from user auth data (server's public key)
+      const sellerPublicKey = user?.serverPublicKey;
       if (!sellerPublicKey) {
-        alert("Seller public key not available. Please try refreshing.");
+        alert("Server public key not available. Please try refreshing.");
         return;
       }
 
@@ -84,6 +86,7 @@ export const RechargeSettings: React.FC = () => {
 
       console.log("Creating payment channel with:", {
         sellerPublicKey,
+        buyerPublicKey: userInfo.publicKey, // This is the buyer's public key
         amount: selectedAmount,
         duration: selectedDuration,
         tokens: tokenAmount,

@@ -26,8 +26,8 @@ export function usePaymentTransaction() {
     channelId: string,
     channelTxHash: string
   ): Promise<PaymentTransactionResult> => {
-    if (!user?.seller_address || !user?.public_key) {
-      return { success: false, error: 'Seller address or public key not available' };
+    if (!user?.seller_address || !user?.serverPublicKey) {
+      return { success: false, error: 'Seller address or server public key not available' };
     }
 
     const buyerPrivateKey = localStorage.getItem("private_key");
@@ -50,9 +50,10 @@ export function usePaymentTransaction() {
       const sellerAddress = await ccc.Address.fromString(user.seller_address, client);
 
       // Create multisig script to get the correct cellDeps
+      // 使用买方私钥和服务端公钥（卖方公钥）
       const { cellDeps } = createMultisigScript(
         derivePublicKeyHashByPrivateKey(buyerPrivateKey),
-        derivePublicKeyHashByPublicKey(user.public_key)
+        derivePublicKeyHashByPublicKey(user.serverPublicKey) // 使用服务端公钥
       );
 
       // 构造支付交易

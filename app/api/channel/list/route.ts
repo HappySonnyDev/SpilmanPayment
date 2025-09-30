@@ -11,6 +11,8 @@ function getStatusText(status: number): string {
       return 'Active';
     case PAYMENT_CHANNEL_STATUS.INVALID:
       return 'Invalid';
+    case PAYMENT_CHANNEL_STATUS.SETTLED:
+      return 'Settled';
     default:
       return 'Unknown';
   }
