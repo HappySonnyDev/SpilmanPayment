@@ -73,16 +73,18 @@ export const derivePublicKeyHashByPublicKeyUint8Array = (
 export const derivePublicKeyHashByPublicKey = (
   publicKey: string,
 ): Uint8Array => {
-  return derivePublicKeyHashByPublicKeyUint8Array(
-    stringToUint8Array(publicKey),
-  );
+  console.log(publicKey,'serverPulic,createPaymentChannel')
+  // Convert hex string to Uint8Array
+  const publicKeyHex = publicKey.startsWith("0x")
+    ? publicKey.slice(2)
+    : publicKey;
+  const publicKeyBytes = new Uint8Array(publicKeyHex.length / 2);
+  for (let i = 0; i < publicKeyBytes.length; i++) {
+    publicKeyBytes[i] = parseInt(publicKeyHex.substr(i * 2, 2), 16);
+  }
+  return derivePublicKeyHashByPublicKeyUint8Array(publicKeyBytes);
 };
 
-function stringToUint8Array(str: string): Uint8Array {
-  // 使用TextEncoder将字符串编码为UTF-8字节数组
-  const encoder = new TextEncoder();
-  return encoder.encode(str);
-}
 
 export const createMultisigScript = (
   buyerPubkeyHash: Uint8Array,
@@ -151,7 +153,7 @@ export const createPaymentChannel = async ({
   });
   await fundingTx.completeInputsByCapacity(buyerSigner);
   await fundingTx.completeFeeBy(buyerSigner, 1400);
-  console.log(jsonStr(fundingTx),'fundingTx===========');
+  console.log(jsonStr(fundingTx), "fundingTx===========");
   const fundingTxHash = fundingTx.hash();
   console.log(`📋 Funding transaction hash calculated: ${fundingTxHash}`);
 
@@ -252,7 +254,7 @@ export const generateCkbSecp256k1Signature = (
 export const generateCkbSecp256k1SignatureWithSince = (
   privateKey: string,
   transactionHash: Uint8Array,
-  sinceValue: bigint
+  sinceValue: bigint,
 ): Uint8Array => {
   // Convert since value to 8-byte array (little endian)
   const sinceBytes = new Uint8Array(8);
@@ -261,12 +263,14 @@ export const generateCkbSecp256k1SignatureWithSince = (
     sinceBytes[i] = Number(since & 0xffn);
     since = since >> 8n;
   }
-  
+
   // Combine transaction hash and since for signing
-  const combinedMessage = new Uint8Array(transactionHash.length + sinceBytes.length);
+  const combinedMessage = new Uint8Array(
+    transactionHash.length + sinceBytes.length,
+  );
   combinedMessage.set(transactionHash, 0);
   combinedMessage.set(sinceBytes, transactionHash.length);
-  
+
   // Hash the combined message
   const combinedHash = hashCkb(combinedMessage.buffer);
   // Convert hex string to Uint8Array
@@ -275,7 +279,7 @@ export const generateCkbSecp256k1SignatureWithSince = (
   for (let i = 0; i < 32; i++) {
     finalMessageHash[i] = parseInt(hashStr.substr(i * 2, 2), 16);
   }
-  
+
   // Generate signature using the combined hash
   return generateCkbSecp256k1Signature(privateKey, finalMessageHash);
 };
@@ -289,13 +293,13 @@ export const jsonStr = (obj: unknown) => {
 };
 
 export const createWitnessData = (
-    buyerSignature: Uint8Array,
-    sellerSignature: Uint8Array
-  ): Uint8Array => {
-    const witnessData = new Uint8Array(132);
-    witnessData.set(buyerSignature, 0);    // buyer signature at offset 0
-    witnessData.set(sellerSignature, 65);  // seller signature at offset 65
-    witnessData[130] = 0; // buyer pubkey index
-    witnessData[131] = 1; // seller pubkey index
-    return witnessData;
-  };
+  buyerSignature: Uint8Array,
+  sellerSignature: Uint8Array,
+): Uint8Array => {
+  const witnessData = new Uint8Array(132);
+  witnessData.set(buyerSignature, 0); // buyer signature at offset 0
+  witnessData.set(sellerSignature, 65); // seller signature at offset 65
+  witnessData[130] = 0; // buyer pubkey index
+  witnessData[131] = 1; // seller pubkey index
+  return witnessData;
+};

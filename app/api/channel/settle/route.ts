@@ -11,8 +11,6 @@ import {
   buildClient,
   generateCkbSecp256k1Signature,
   createWitnessData,
-  getMessageHashFromTx,
-  jsonStr,
 } from "@/lib/ckb";
 
 export async function POST(request: NextRequest) {
@@ -32,7 +30,6 @@ export async function POST(request: NextRequest) {
     }
 
     const paymentChannelRepo = new PaymentChannelRepository();
-    const chunkPaymentRepo = new ChunkPaymentRepository();
 
     // Get the payment channel
     const channel = paymentChannelRepo.getPaymentChannelByChannelId(channelId);
@@ -56,16 +53,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log("💳 Channel information:", {
-      channelId: channel.channel_id,
-      originalAmount: channel.amount,
-      consumedTokens: channel.consumed_tokens,
-      remainingAmount: channel.amount - channel.consumed_tokens,
-      status: channel.status,
-    });
-
     // Get all chunk payments for this channel to find the latest one
-    // Use a raw database query since we need to access the database directly
     const { getDatabase } = await import("@/lib/database");
     const db = getDatabase();
     const chunkPayments = db
@@ -83,16 +71,6 @@ export async function POST(request: NextRequest) {
 
     // Find the latest chunk payment
     const latestChunk = chunkPayments[0];
-
-    console.log("📦 Latest chunk information:", {
-      chunkId: latestChunk.chunk_id,
-      tokensCount: latestChunk.tokens_count,
-      isPaid: Boolean(latestChunk.is_paid),
-      cumulativePayment: latestChunk.cumulative_payment,
-      remainingBalance: latestChunk.remaining_balance,
-      hasTransactionData: Boolean(latestChunk.transaction_data),
-      hasBuyerSignature: Boolean(latestChunk.buyer_signature),
-    });
 
     // Check if the latest chunk is paid
     if (!latestChunk.is_paid) {
@@ -113,7 +91,22 @@ export async function POST(request: NextRequest) {
     }
 
     const transactionData = JSON.parse(latestChunk.transaction_data);
-    const buyerSignatureBytes = hexFrom(latestChunk.buyer_signature);
+    
+    // Convert buyer signature to bytes
+    const buyerSignatureHex = latestChunk.buyer_signature.startsWith('0x') 
+      ? latestChunk.buyer_signature.slice(2) 
+      : latestChunk.buyer_signature;
+    
+    if (buyerSignatureHex.length !== 130) {
+      return NextResponse.json(
+        { error: `Invalid buyer signature length: ${buyerSignatureHex.length}, expected 130` },
+        { status: 400 }
+      );
+    }
+    
+    const buyerSignatureBytes = new Uint8Array(
+      buyerSignatureHex.match(/.{2}/g)!.map((byte) => parseInt(byte, 16))
+    );
 
     // Get seller private key from environment
     const sellerPrivateKey = process.env.SELLER_PRIVATE_KEY;
@@ -127,41 +120,42 @@ export async function POST(request: NextRequest) {
     try {
       // Recover the transaction from transaction data
       const transaction = ccc.Transaction.from(transactionData);
-      console.log("Transaction服务端:", jsonStr(transaction));
       const transactionHash = transaction.hash();
-      console.log("TransactionHash服务端:", transactionHash);
-      const messageHash = getMessageHashFromTx(transactionHash);
-
+      
+      // Convert transaction hash to bytes for signing
+      const transactionHashBytes = new Uint8Array(32);
+      const hashStr = transactionHash.slice(2); // Remove '0x' prefix
+      for (let i = 0; i < 32; i++) {
+        transactionHashBytes[i] = parseInt(hashStr.substr(i * 2, 2), 16);
+      }
+      
       // Generate seller signature
       const sellerSignatureBytes = generateCkbSecp256k1Signature(
         sellerPrivateKey,
-        messageHash,
+        transactionHashBytes,
       );
+      
+      // Validate signature lengths
+      if (buyerSignatureBytes.length !== 65) {
+        throw new Error(`Invalid buyer signature length: ${buyerSignatureBytes.length}, expected 65`);
+      }
+      if (sellerSignatureBytes.length !== 65) {
+        throw new Error(`Invalid seller signature length: ${sellerSignatureBytes.length}, expected 65`);
+      }
 
       // Create witness data with both signatures
       const witnessData = createWitnessData(
-        new Uint8Array(
-          buyerSignatureBytes
-            .slice(2)
-            .match(/.{2}/g)!
-            .map((byte) => parseInt(byte, 16)),
-        ),
+        buyerSignatureBytes,
         sellerSignatureBytes,
       );
 
       // Update the transaction witnesses
-      transaction.witnesses[0] = hexFrom(
-        new WitnessArgs(hexFrom(witnessData)).toBytes(),
-      );
+      const witnessArgs = new WitnessArgs(hexFrom(witnessData));
+      transaction.witnesses[0] = hexFrom(witnessArgs.toBytes());
 
       // Submit the transaction to CKB network
       const client = buildClient("devnet");
-      console.log(jsonStr(transaction), "transaction");
       const txHash = await client.sendTransaction(transaction);
-
-      console.log(
-        `✅ Settlement transaction submitted successfully: ${txHash}`,
-      );
 
       // Update channel status to SETTLED
       const updatedChannel = paymentChannelRepo.updatePaymentChannelStatus(
