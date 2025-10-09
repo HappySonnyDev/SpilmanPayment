@@ -11,8 +11,22 @@ import {
   buildClient,
   jsonStr,
 } from "@/lib/ckb";
-import { ccc } from "@ckb-ccc/core";
+import { ccc, WitnessArgs } from "@ckb-ccc/core";
 import { hexFrom } from "@ckb-ccc/core";
+import * as fs from "fs";
+import * as path from "path";
+import { secp256k1 } from "@noble/curves/secp256k1";
+
+// Load system scripts configuration
+function loadSystemScripts() {
+  const scriptsPath = path.join(
+    process.cwd(),
+    "deployment",
+    "system-scripts.json",
+  );
+  const scriptsContent = fs.readFileSync(scriptsPath, "utf-8");
+  return JSON.parse(scriptsContent);
+}
 
 // Request body interface
 interface CreateChannelRequest {
@@ -60,78 +74,46 @@ export async function POST(request: NextRequest) {
         { status: 500 },
       );
     }
+
     const refundCCC = ccc.Transaction.from(refundTx);
     const placeholderWitness = ("0x" + "00".repeat(132)) as `0x${string}`;
     refundCCC.witnesses.push(placeholderWitness);
 
-    // Add seller's real UTXO for fee payment since we have seller's private key
+    // Build client for transaction construction
     const client = buildClient("devnet");
     const sellerSigner = new ccc.SignerCkbPrivateKey(client, sellerPrivateKey);
-    const sellerAddress = await sellerSigner.getRecommendedAddressObj();
 
-    // Find a suitable UTXO from seller's address for fee payment
-    const sellerUTXOsGenerator = sellerSigner.client.findCellsByLock(
-      sellerAddress.script,
+    // New approach: Deduct fee from buyer's refund amount instead of seller paying
+    // This simplifies transaction structure and avoids P2PH signing complexity
+    const estimatedFee = BigInt(1400); // 1400 shannons for transaction fee
+
+    console.log(
+      `Original buyer refund amount: ${refundCCC.outputs[0].capacity}`,
     );
+    console.log(`Estimated transaction fee: ${estimatedFee}`);
 
-    let feeUTXO = null;
-    for await (const utxo of sellerUTXOsGenerator) {
-      // Find a UTXO with sufficient capacity for fee (much more lenient check)
-      // Just need enough for basic transaction fee, not full cell minimum
-      if (utxo.cellOutput.capacity >= BigInt(10000)) { // 10,000 shannons = 0.0001 CKB
-        feeUTXO = utxo;
-        break;
-      }
-    }
+    // Calculate net refund amount (original amount minus fee)
+    const originalRefundAmount = refundCCC.outputs[0].capacity;
+    const netRefundAmount = originalRefundAmount - estimatedFee;
 
-    if (!feeUTXO) {
-      return NextResponse.json(
-        { error: "Seller has no available UTXOs for refund transaction fee" },
-        { status: 500 },
-      );
-    }
+    // Update buyer's refund output with fee deducted
+    refundCCC.outputs[0] = ccc.CellOutput.from({
+      lock: refundCCC.outputs[0].lock, // Keep buyer's address
+      capacity: netRefundAmount, // Reduce by fee amount
+    });
 
-    const estimatedFee = BigInt(1400); // 1400 shannons for fee (use BigInt directly)
+    console.log(`Net refund amount after fee deduction: ${netRefundAmount}`);
+    console.log(`Fee will be absorbed by network: ${estimatedFee}`);
 
-    // Add seller's real UTXO as fee input
-    refundCCC.inputs.push(
-      ccc.CellInput.from({
-        previousOutput: feeUTXO.outPoint!,
-      }),
-    );
-
-    // Always add seller's change output to ensure transaction balance
-    // Not adding change output causes massive fee (input - output = fee)
-    const changeAmount = feeUTXO.cellOutput.capacity - estimatedFee;
-    
-    console.log(`Change amount: ${changeAmount}, Fee UTXO capacity: ${feeUTXO.cellOutput.capacity}, Estimated fee: ${estimatedFee}`);
-    
-    // Always add change output regardless of amount to prevent unbalanced transaction
-    refundCCC.outputs.push(
-      ccc.CellOutput.from({
-        lock: sellerAddress.script,
-        capacity: changeAmount,
-      }),
-    );
-    console.log(`Added change output: ${changeAmount} capacity`);
+    // Transaction now has proper input-output balance:
+    // Input: Original channel capacity
+    // Output: Reduced refund amount
+    // Difference: Becomes transaction fee automatically
 
     console.log(
       jsonStr(refundCCC),
-      "refundCCC with seller's real UTXO for fees",
+      "Simplified refund transaction with fee deducted from buyer's amount",
     );
-
-    // Manually generate seller signature for fee inputs to avoid UTXO existence checks
-    const refundTxHashForSigning = refundCCC.hash();
-    const refundHashBytes = getMessageHashFromTx(refundTxHashForSigning);
-    const sellerFeeSignature = generateCkbSecp256k1Signature(
-      sellerPrivateKey,
-      refundHashBytes,
-    );
-    
-    // Add seller signature for fee input to witnesses (index 1 for second input)
-    const sellerFeeWitness = hexFrom(sellerFeeSignature) as `0x${string}`;
-    refundCCC.witnesses.push(sellerFeeWitness);
-    console.log("Seller signature added to witnesses for fee inputs");
 
     // Generate message hash from completed refund transaction
     const refundTxHash = refundCCC.hash();
@@ -144,22 +126,27 @@ export async function POST(request: NextRequest) {
 
     const messageHash = getMessageHashFromTx(refundTxHash);
 
-    // Generate seller signature
+    // Generate seller signature with correct since value
+    const sinceValue = ccc.numFromBytes(
+      new Uint8Array([
+        0x80,
+        0x00,
+        0x00,
+        0x00, // Relative time lock flag
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+      ]),
+    ) + BigInt(seconds);
+    
+    console.log(`Generating seller signature with since value: ${sinceValue}`);
+    console.log(`Duration in seconds: ${seconds}`);
+    
     const sellerSignature = generateCkbSecp256k1SignatureWithSince(
       sellerPrivateKey,
       messageHash,
-      ccc.numFromBytes(
-        new Uint8Array([
-          0x80,
-          0x00,
-          0x00,
-          0x00, // Relative time lock flag
-          0x00,
-          0x00,
-          0x00,
-          0x00,
-        ]),
-      ) + BigInt(seconds),
+      sinceValue,
     );
 
     // Generate unique channel ID

@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useUserInfo } from "@/lib/user-info-context";
 import { ccc, hexFrom, WitnessArgs } from "@ckb-ccc/core";
-import { DEVNET_SCRIPTS, buildClient, generateCkbSecp256k1Signature, createWitnessData } from "@/lib/ckb";
+import { DEVNET_SCRIPTS, buildClient, generateCkbSecp256k1Signature, generateCkbSecp256k1SignatureWithSince, createWitnessData, getMessageHashFromTx } from "@/lib/ckb";
 import { executePayNow } from "@/lib/payment-utils";
 import { ChevronDown } from "lucide-react";
 
@@ -272,17 +272,33 @@ export const PaymentChannelSettings: React.FC = () => {
       // Get transaction hash for signing
       const transactionHash = refundTx.hash();
       
-      // Convert transaction hash to bytes for signing
-      const transactionHashBytes = new Uint8Array(32);
-      const hashStr = transactionHash.slice(2); // Remove '0x' prefix
-      for (let i = 0; i < 32; i++) {
-        transactionHashBytes[i] = parseInt(hashStr.substr(i * 2, 2), 16);
-      }
+      // Generate message hash from completed refund transaction
+      const messageHash = getMessageHashFromTx(transactionHash);
       
-      // Generate buyer signature
-      const buyerSignatureBytes = generateCkbSecp256k1Signature(
+      // Generate buyer signature with timelock (since this is a refund transaction)
+      // Use the same duration that was used during channel creation
+      const durationInSeconds = channel.durationSeconds || (channel.durationDays * 24 * 60 * 60);
+      
+      const sinceValue = ccc.numFromBytes(
+        new Uint8Array([
+          0x80,
+          0x00,
+          0x00,
+          0x00, // Relative time lock flag
+          0x00,
+          0x00,
+          0x00,
+          0x00,
+        ]),
+      ) + BigInt(durationInSeconds);
+      
+      console.log(`Generating buyer signature with since value: ${sinceValue}`);
+      console.log(`Duration in seconds: ${durationInSeconds}`);
+      
+      const buyerSignatureBytes = generateCkbSecp256k1SignatureWithSince(
         buyerPrivateKey,
-        transactionHashBytes,
+        messageHash,
+        sinceValue,
       );
       
       // Convert seller signature from hex to bytes
