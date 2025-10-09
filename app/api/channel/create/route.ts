@@ -8,8 +8,11 @@ import {
   getMessageHashFromTx,
   generateCkbSecp256k1Signature,
   generateCkbSecp256k1SignatureWithSince,
+  buildClient,
+  jsonStr,
 } from "@/lib/ckb";
 import { ccc } from "@ckb-ccc/core";
+import { hexFrom } from "@ckb-ccc/core";
 
 // Request body interface
 interface CreateChannelRequest {
@@ -58,7 +61,79 @@ export async function POST(request: NextRequest) {
       );
     }
     const refundCCC = ccc.Transaction.from(refundTx);
-    // Generate message hash from refund transaction
+    const placeholderWitness = ("0x" + "00".repeat(132)) as `0x${string}`;
+    refundCCC.witnesses.push(placeholderWitness);
+
+    // Add seller's real UTXO for fee payment since we have seller's private key
+    const client = buildClient("devnet");
+    const sellerSigner = new ccc.SignerCkbPrivateKey(client, sellerPrivateKey);
+    const sellerAddress = await sellerSigner.getRecommendedAddressObj();
+
+    // Find a suitable UTXO from seller's address for fee payment
+    const sellerUTXOsGenerator = sellerSigner.client.findCellsByLock(
+      sellerAddress.script,
+    );
+
+    let feeUTXO = null;
+    for await (const utxo of sellerUTXOsGenerator) {
+      // Find a UTXO with sufficient capacity for fee (much more lenient check)
+      // Just need enough for basic transaction fee, not full cell minimum
+      if (utxo.cellOutput.capacity >= BigInt(10000)) { // 10,000 shannons = 0.0001 CKB
+        feeUTXO = utxo;
+        break;
+      }
+    }
+
+    if (!feeUTXO) {
+      return NextResponse.json(
+        { error: "Seller has no available UTXOs for refund transaction fee" },
+        { status: 500 },
+      );
+    }
+
+    const estimatedFee = BigInt(1400); // 1400 shannons for fee (use BigInt directly)
+
+    // Add seller's real UTXO as fee input
+    refundCCC.inputs.push(
+      ccc.CellInput.from({
+        previousOutput: feeUTXO.outPoint!,
+      }),
+    );
+
+    // Always add seller's change output to ensure transaction balance
+    // Not adding change output causes massive fee (input - output = fee)
+    const changeAmount = feeUTXO.cellOutput.capacity - estimatedFee;
+    
+    console.log(`Change amount: ${changeAmount}, Fee UTXO capacity: ${feeUTXO.cellOutput.capacity}, Estimated fee: ${estimatedFee}`);
+    
+    // Always add change output regardless of amount to prevent unbalanced transaction
+    refundCCC.outputs.push(
+      ccc.CellOutput.from({
+        lock: sellerAddress.script,
+        capacity: changeAmount,
+      }),
+    );
+    console.log(`Added change output: ${changeAmount} capacity`);
+
+    console.log(
+      jsonStr(refundCCC),
+      "refundCCC with seller's real UTXO for fees",
+    );
+
+    // Manually generate seller signature for fee inputs to avoid UTXO existence checks
+    const refundTxHashForSigning = refundCCC.hash();
+    const refundHashBytes = getMessageHashFromTx(refundTxHashForSigning);
+    const sellerFeeSignature = generateCkbSecp256k1Signature(
+      sellerPrivateKey,
+      refundHashBytes,
+    );
+    
+    // Add seller signature for fee input to witnesses (index 1 for second input)
+    const sellerFeeWitness = hexFrom(sellerFeeSignature) as `0x${string}`;
+    refundCCC.witnesses.push(sellerFeeWitness);
+    console.log("Seller signature added to witnesses for fee inputs");
+
+    // Generate message hash from completed refund transaction
     const refundTxHash = refundCCC.hash();
     if (!refundTxHash) {
       return NextResponse.json(
@@ -100,8 +175,8 @@ export async function POST(request: NextRequest) {
       duration_seconds: seconds, // Store actual seconds
       status: PAYMENT_CHANNEL_STATUS.INACTIVE, // Set to inactive when created
       seller_signature: Buffer.from(sellerSignature).toString("hex"),
-      refund_tx_data: JSON.stringify(refundTx),
-      funding_tx_data: JSON.stringify(fundingTx),
+      refund_tx_data: jsonStr(refundCCC), // Store completed refund transaction with fees
+      funding_tx_data: jsonStr(fundingTx),
     });
 
     // Return signature and transaction structures
@@ -112,7 +187,7 @@ export async function POST(request: NextRequest) {
         status: paymentChannel.status,
         statusText: getStatusText(paymentChannel.status),
         sellerSignature: Buffer.from(sellerSignature).toString("hex"),
-        refundTx: refundTx,
+        refundTx: JSON.parse(jsonStr(refundCCC)), // Return completed refund transaction with seller fees
         fundingTx: fundingTx,
         amount,
         duration: seconds,

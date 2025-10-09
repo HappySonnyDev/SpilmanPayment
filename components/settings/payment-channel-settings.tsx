@@ -15,8 +15,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useUserInfo } from "@/lib/user-info-context";
-import { ccc } from "@ckb-ccc/core";
-import { DEVNET_SCRIPTS } from "@/lib/ckb";
+import { ccc, hexFrom, WitnessArgs } from "@ckb-ccc/core";
+import { DEVNET_SCRIPTS, buildClient, generateCkbSecp256k1Signature, createWitnessData } from "@/lib/ckb";
 import { executePayNow } from "@/lib/payment-utils";
 import { ChevronDown } from "lucide-react";
 
@@ -246,6 +246,114 @@ export const PaymentChannelSettings: React.FC = () => {
     }
   };
 
+  const handleWithdrawDeposit = async (channel: PaymentChannel) => {
+    try {
+      setActionLoading(channel.channelId);
+      
+      // Check if refund transaction data and seller signature exist
+      if (!channel.refundTxData || !channel.sellerSignature) {
+        alert("No refund transaction data or seller signature available for this channel.");
+        return;
+      }
+
+      // Get buyer private key from localStorage
+      const buyerPrivateKey = localStorage.getItem("private_key");
+      if (!buyerPrivateKey) {
+        alert("Please connect your CKB wallet first in Payment Channel settings.");
+        return;
+      }
+
+      // Parse the refund transaction (already includes fees from creation time)
+      const refundTxData = JSON.parse(channel.refundTxData);
+      const refundTx = ccc.Transaction.from(refundTxData);
+      
+      console.log('Using pre-calculated refund transaction:', refundTx);
+      
+      // Get transaction hash for signing
+      const transactionHash = refundTx.hash();
+      
+      // Convert transaction hash to bytes for signing
+      const transactionHashBytes = new Uint8Array(32);
+      const hashStr = transactionHash.slice(2); // Remove '0x' prefix
+      for (let i = 0; i < 32; i++) {
+        transactionHashBytes[i] = parseInt(hashStr.substr(i * 2, 2), 16);
+      }
+      
+      // Generate buyer signature
+      const buyerSignatureBytes = generateCkbSecp256k1Signature(
+        buyerPrivateKey,
+        transactionHashBytes,
+      );
+      
+      // Convert seller signature from hex to bytes
+      const sellerSignatureHex = channel.sellerSignature.startsWith('0x') 
+        ? channel.sellerSignature.slice(2) 
+        : channel.sellerSignature;
+      
+      if (sellerSignatureHex.length !== 130) {
+        throw new Error(`Invalid seller signature length: ${sellerSignatureHex.length}, expected 130`);
+      }
+      
+      const sellerSignatureBytes = new Uint8Array(
+        sellerSignatureHex.match(/.{2}/g)!.map((byte) => parseInt(byte, 16))
+      );
+      
+      // Validate signature lengths
+      if (buyerSignatureBytes.length !== 65) {
+        throw new Error(`Invalid buyer signature length: ${buyerSignatureBytes.length}, expected 65`);
+      }
+      if (sellerSignatureBytes.length !== 65) {
+        throw new Error(`Invalid seller signature length: ${sellerSignatureBytes.length}, expected 65`);
+      }
+
+      // Create witness data with both signatures (buyer first, seller second)
+      const witnessData = createWitnessData(
+        buyerSignatureBytes,
+        sellerSignatureBytes,
+      );
+
+      // Update the transaction witnesses
+      const witnessArgs = new WitnessArgs(hexFrom(witnessData));
+      refundTx.witnesses[0] = hexFrom(witnessArgs.toBytes());
+      
+      // Submit the transaction to CKB network
+      const client = buildClient("devnet");
+      console.log('Submitting refund transaction with multi-sig:', refundTx);
+      
+      const txHash = await client.sendTransaction(refundTx);
+      
+      alert(
+        `Deposit withdrawn successfully!\n` +
+        `Transaction Hash: ${txHash}\n` +
+        `You can check the transaction status on CKB Explorer.`
+      );
+      
+      // Refresh the channels list
+      await fetchPaymentChannels();
+      
+    } catch (error) {
+      console.error('Deposit withdrawal error:', error);
+      
+      // Provide more specific error messages
+      let errorMessage = 'Failed to withdraw deposit: ';
+      if (error instanceof Error) {
+        if (error.message.includes('time')) {
+          errorMessage += 'Channel timelock may not have expired yet. Please wait for the timelock period to complete.';
+        } else if (error.message.includes('signature')) {
+          errorMessage += 'Signature validation failed. Please check your private key and seller signature.';
+        } else {
+          errorMessage += error.message;
+        }
+      } else {
+        errorMessage += 'Unknown error';
+      }
+      
+      alert(errorMessage);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const getStatusBadge = (status: number, statusText: string) => {
     const baseClasses = "inline-flex rounded-full px-3 py-1 text-xs font-medium";
     
@@ -271,6 +379,12 @@ export const PaymentChannelSettings: React.FC = () => {
       case 4: // Settled
         return (
           <span className={`${baseClasses} bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400`}>
+            {statusText}
+          </span>
+        );
+      case 5: // Expired
+        return (
+          <span className={`${baseClasses} bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400`}>
             {statusText}
           </span>
         );
@@ -372,6 +486,17 @@ export const PaymentChannelSettings: React.FC = () => {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+      );
+    } else if (channel.status === 5) { // Expired - Show Withdraw Deposit
+      return (
+        <Button
+          onClick={() => handleWithdrawDeposit(channel)}
+          disabled={isLoading}
+          className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 text-sm"
+          size="sm"
+        >
+          {isLoading ? 'Processing...' : 'Withdraw Deposit'}
+        </Button>
       );
     } else { // Invalid or Settled - No actions available
       return (

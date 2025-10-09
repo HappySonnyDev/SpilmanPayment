@@ -73,7 +73,7 @@ export const derivePublicKeyHashByPublicKeyUint8Array = (
 export const derivePublicKeyHashByPublicKey = (
   publicKey: string,
 ): Uint8Array => {
-  console.log(publicKey,'serverPulic,createPaymentChannel')
+  console.log(publicKey, "serverPulic,createPaymentChannel");
   // Convert hex string to Uint8Array
   const publicKeyHex = publicKey.startsWith("0x")
     ? publicKey.slice(2)
@@ -84,7 +84,6 @@ export const derivePublicKeyHashByPublicKey = (
   }
   return derivePublicKeyHashByPublicKeyUint8Array(publicKeyBytes);
 };
-
 
 export const createMultisigScript = (
   buyerPubkeyHash: Uint8Array,
@@ -151,7 +150,7 @@ export const createPaymentChannel = async ({
     ],
     cellDeps,
   });
-  await fundingTx.completeInputsByCapacity(buyerSigner);
+  // await fundingTx.completeInputsByCapacity(buyerSigner);
   await fundingTx.completeFeeBy(buyerSigner, 1400);
   console.log(jsonStr(fundingTx), "fundingTx===========");
   const fundingTxHash = fundingTx.hash();
@@ -164,6 +163,10 @@ export const createPaymentChannel = async ({
   const currentTime = Math.floor(Date.now() / 1000);
   const DURATION_IN_SECONDS = seconds;
   const refundTime = currentTime + DURATION_IN_SECONDS;
+  // Create basic refund transaction structure (server will add seller's fee input)
+  // This avoids timing conflicts when buyer's funding transaction goes on-chain
+  const buyerAddress = await buyerSigner.getRecommendedAddressObj();
+  
   const refundTx = ccc.Transaction.from({
     inputs: [
       {
@@ -188,16 +191,19 @@ export const createPaymentChannel = async ({
     ],
     outputs: [
       {
-        // Refund goes back to buyer's address after timelock
-        lock: (await buyerSigner.getRecommendedAddressObj()).script,
-        capacity: CKB_AMOUNT,
+        // Full refund to buyer's address (server will add fee handling)
+        lock: buyerAddress.script,
+        capacity: CKB_AMOUNT, // Full amount, fees handled by seller
       },
     ],
     cellDeps,
   });
-  console.log("✍️  Step 3: Both parties signing refund transaction...");
+  
+  console.log('✍️  Step 3: Creating basic refund transaction structure...');
+  console.log(`💰 Refund amount: ${CKB_AMOUNT} (full amount, seller pays fees)`);
+  console.log(`🏢 Server will add seller's fee inputs to complete transaction`);
   const refundMessageHash = getMessageHashFromTx(refundTx.hash());
-  console.log(refundTx);
+  console.log(refundTx, "basic refundTx structure", jsonStr(refundTx));
 
   // Return the refund transaction for API processing
   return {
@@ -260,8 +266,8 @@ export const generateCkbSecp256k1SignatureWithSince = (
   const sinceBytes = new Uint8Array(8);
   let since = sinceValue;
   for (let i = 0; i < 8; i++) {
-    sinceBytes[i] = Number(since & 0xffn);
-    since = since >> 8n;
+    sinceBytes[i] = Number(since & BigInt(0xff));
+    since = since >> BigInt(8);
   }
 
   // Combine transaction hash and since for signing
