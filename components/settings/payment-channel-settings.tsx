@@ -109,14 +109,9 @@ export const PaymentChannelSettings: React.FC = () => {
   const fetchPaymentChannels = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch('/api/channel/list');
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch payment channels');
-      }
-      
-      const result = await response.json();
-      setChannels(result.data.channels);
+      const { channel } = await import('@/lib/api');
+      const result = await channel.list();
+      setChannels(result.data.channels as PaymentChannel[]);
     } catch (error) {
       console.error('Error fetching payment channels:', error);
       alert('Failed to load payment channels');

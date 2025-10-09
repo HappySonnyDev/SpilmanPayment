@@ -1,43 +1,56 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { AuthService, setAuthCookie, validatePrivateKey } from '@/lib/auth';
+import { NextRequest, NextResponse } from "next/server";
+import { AuthService, setAuthCookie } from "@/lib/auth";
+
+// Utility function to validate public key format
+function validatePublicKey(publicKey: string): boolean {
+  try {
+    // Remove 0x prefix if present
+    const cleanKey = publicKey.startsWith("0x")
+      ? publicKey.slice(2)
+      : publicKey;
+
+    // Check if it's a valid hex string of correct length (130 characters = 65 bytes uncompressed)
+    // or 66 characters = 33 bytes compressed
+    return (
+      /^[0-9a-fA-F]{130}$/.test(cleanKey) || /^[0-9a-fA-F]{66}$/.test(cleanKey)
+    );
+  } catch {
+    return false;
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { privateKey, emailOrUsername, password } = body;
+    const { publicKey: clientPublicKey } = body;
 
     const authService = new AuthService();
     let user, token;
 
-    if (privateKey) {
-      // New private key authentication
-      if (!validatePrivateKey(privateKey)) {
+    if (clientPublicKey) {
+      // New public key authentication
+      if (!validatePublicKey(clientPublicKey)) {
         return NextResponse.json(
-          { error: 'Invalid private key format' },
-          { status: 400 }
+          { error: "Invalid public key format" },
+          { status: 400 },
         );
       }
 
-      const result = await authService.loginWithPrivateKey(privateKey);
-      user = result.user;
-      token = result.token;
-    } else if (emailOrUsername && password) {
-      // Legacy email/password authentication
-      const result = await authService.login(emailOrUsername, password);
+      const result = await authService.loginWithPublicKey(clientPublicKey);
       user = result.user;
       token = result.token;
     } else {
       return NextResponse.json(
-        { error: 'Either private key or email/username and password are required' },
-        { status: 400 }
+        { error: "Public key is required" },
+        { status: 400 },
       );
     }
 
     // Get public key and seller address
-    const publicKey = user.public_key || authService.getPublicKey();
+    const userPublicKey = user.public_key;
     const sellerAddress = await authService.getSellerAddress();
-    const serverPublicKey = authService.getPublicKey();
-    
+    const serverPublicKey = await authService.getPublicKey();
+
     // Get user's active payment channel
     const activeChannel = authService.getActivePaymentChannel(user.id);
 
@@ -48,45 +61,46 @@ export async function POST(request: NextRequest) {
       username: user.username,
       created_at: user.created_at,
       is_active: Boolean(user.is_active), // Ensure boolean conversion from SQLite integer
-      public_key: publicKey,
+      public_key: userPublicKey,
       seller_address: sellerAddress,
       serverPublicKey,
-      active_channel: activeChannel ? {
-        channelId: activeChannel.channel_id,
-        txHash: activeChannel.tx_hash,
-        amount: activeChannel.amount,
-        consumed_tokens: activeChannel.consumed_tokens,
-        status: activeChannel.status
-      } : null
+      active_channel: activeChannel
+        ? {
+            channelId: activeChannel.channel_id,
+            txHash: activeChannel.tx_hash,
+            amount: activeChannel.amount,
+            consumed_tokens: activeChannel.consumed_tokens,
+            status: activeChannel.status,
+          }
+        : null,
     };
 
     const response = NextResponse.json({
-      message: 'Login successful',
-      user: userData
+      message: "Login successful",
+      user: userData,
     });
 
     // Set authentication cookie
-    response.headers.set('Set-Cookie', setAuthCookie(token));
+    response.headers.set("Set-Cookie", setAuthCookie(token));
 
     return response;
-
   } catch (error) {
     if (error instanceof Error) {
-      if (error.message === 'Invalid credentials' || error.message === 'Invalid private key format') {
+      if (
+        error.message === "Invalid credentials" ||
+        error.message === "Invalid public key format"
+      ) {
         return NextResponse.json(
-          { error: 'Invalid credentials or private key' },
-          { status: 401 }
+          { error: "Invalid credentials or public key" },
+          { status: 401 },
         );
       }
-      return NextResponse.json(
-        { error: error.message },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
     return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
+      { error: "Internal server error" },
+      { status: 500 },
     );
   }
 }

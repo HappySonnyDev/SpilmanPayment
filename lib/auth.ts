@@ -6,7 +6,21 @@ import { NextRequest } from 'next/server';
 import { UserRepository, SessionRepository, User, PaymentChannelRepository, PAYMENT_CHANNEL_STATUS } from './database';
 import { secp256k1 } from '@noble/curves/secp256k1';
 
-// Utility function to validate private key format
+// Utility function to validate public key format
+function isValidPublicKey(publicKey: string): boolean {
+  try {
+    // Remove 0x prefix if present
+    const cleanKey = publicKey.startsWith('0x') ? publicKey.slice(2) : publicKey;
+    
+    // Check if it's a valid hex string of correct length (130 characters = 65 bytes uncompressed)
+    // or 66 characters = 33 bytes compressed
+    return /^[0-9a-fA-F]{130}$/.test(cleanKey) || /^[0-9a-fA-F]{66}$/.test(cleanKey);
+  } catch {
+    return false;
+  }
+}
+
+// Utility function to validate private key format (kept for backward compatibility)
 function isValidPrivateKey(privateKey: string): boolean {
   try {
     // Remove 0x prefix if present
@@ -27,11 +41,10 @@ function isValidPrivateKey(privateKey: string): boolean {
 }
 
 // Utility function to generate public key from private key
-function generatePublicKeyFromPrivateKey(privateKey: string): string {
-  const cleanPrivateKey = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey;
-  const privKeyBuffer = Buffer.from(cleanPrivateKey, 'hex');
-  const publicKey = secp256k1.getPublicKey(privKeyBuffer, false);
-  return Buffer.from(publicKey).toString('hex');
+async function generatePublicKeyFromPrivateKey(privateKey: string): Promise<string> {
+  // Use the centralized utility function from ckb module
+  const { privateKeyToPublicKeyHex } = await import('./ckb');
+  return privateKeyToPublicKeyHex(privateKey);
 }
 
 // JWT secret - in production, use a strong secret from environment variables
@@ -59,17 +72,15 @@ export class AuthService {
   }
 
   // Generate public key from server private key
-  private generatePublicKey(): string {
+  private async generatePublicKey(): Promise<string> {
     const privateKey = process.env.SELLER_PRIVATE_KEY;
     if (!privateKey) {
       throw new Error('SELLER_PRIVATE_KEY not found in environment variables');
     }
     
-    // Remove 0x prefix if present
-    const cleanPrivateKey = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey;
-    const privKeyBuffer = Buffer.from(cleanPrivateKey, 'hex');
-    const publicKey = secp256k1.getPublicKey(privKeyBuffer, false);
-    return Buffer.from(publicKey).toString('hex');
+    // Use the centralized utility function from ckb module
+    const { privateKeyToPublicKeyHex } = await import('./ckb');
+    return privateKeyToPublicKeyHex(privateKey);
   }
 
   // Generate seller address from server private key
@@ -93,7 +104,7 @@ export class AuthService {
   }
 
   // Public method to get the public key
-  getPublicKey(): string {
+  async getPublicKey(): Promise<string> {
     return this.generatePublicKey();
   }
 
@@ -169,15 +180,12 @@ export class AuthService {
     return { user, token };
   }
 
-  // Login user with private key
-  async loginWithPrivateKey(privateKey: string): Promise<{ user: User; token: string }> {
-    // Validate private key format
-    if (!isValidPrivateKey(privateKey)) {
-      throw new Error('Invalid private key format');
+  // Authenticate user with public key (secure method - private key never transmitted)
+  async loginWithPublicKey(publicKey: string): Promise<{ user: User; token: string }> {
+    // Validate public key format
+    if (!isValidPublicKey(publicKey)) {
+      throw new Error('Invalid public key format');
     }
-
-    // Generate public key from private key
-    const publicKey = generatePublicKeyFromPrivateKey(privateKey);
 
     // Try to find user by public key
     let user = this.userRepo.getUserByPublicKey(publicKey);
@@ -293,12 +301,7 @@ export async function requireAuth(request: NextRequest): Promise<User> {
   return user;
 }
 
-// New utility function to validate private key
-export function validatePrivateKey(privateKey: string): boolean {
-  return isValidPrivateKey(privateKey);
-}
-
-// New utility function to get public key from private key  
-export function getPublicKeyFromPrivateKey(privateKey: string): string {
-  return generatePublicKeyFromPrivateKey(privateKey);
+// New utility function to validate public key
+export function validatePublicKey(publicKey: string): boolean {
+  return isValidPublicKey(publicKey);
 }

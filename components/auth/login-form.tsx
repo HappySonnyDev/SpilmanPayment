@@ -17,7 +17,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const router = useRouter();
-  const { loginWithPrivateKey } = useAuth();
+  const { loginWithWallet } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,7 +41,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
         return;
       }
 
-      await loginWithPrivateKey(formData.privateKey);
+      await loginWithWallet(formData.privateKey);
 
       // Success - user state is automatically updated by auth context
       if (onSuccess) {

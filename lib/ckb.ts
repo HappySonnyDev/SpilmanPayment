@@ -55,6 +55,18 @@ export const derivePublicKeyHashByPrivateKey = (
   return derivePublicKeyHashByPublicKeyUint8Array(publicKey);
 };
 
+/**
+ * Convert private key to public key hex string
+ * @param privateKey - Private key with or without '0x' prefix
+ * @returns Public key as hex string (without '0x' prefix)
+ */
+export const privateKeyToPublicKeyHex = (privateKey: string): string => {
+  const cleanPrivateKey = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey;
+  const privKeyBuffer = Buffer.from(cleanPrivateKey, 'hex');
+  const publicKey = secp256k1.getPublicKey(privKeyBuffer, false);
+  return Buffer.from(publicKey).toString('hex');
+};
+
 export const derivePublicKeyHashByPublicKeyUint8Array = (
   publicKey: Uint8Array<ArrayBufferLike>,
 ): Uint8Array => {

@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Generate server public key and seller address
-    const serverPublicKey = authService.getPublicKey();
+    const serverPublicKey = await authService.getPublicKey();
     const sellerAddress = await authService.getSellerAddress();
     
     // Get user's active payment channel

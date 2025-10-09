@@ -9,20 +9,18 @@ import {
 } from "react";
 import {
   User,
-  loginWithPrivateKey as loginWithPrivateKeyAPI,
+  loginWithWallet as loginWithWalletAPI,
   logoutUser,
   getCurrentUser,
   getStoredPrivateKey,
   clearStoredCredentials,
 } from "@/lib/auth-client";
 
-
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  loginWithPrivateKey: (privateKey: string) => Promise<void>;
+  loginWithWallet: (privateKey: string) => Promise<void>;
   logout: () => Promise<void>;
-  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -37,46 +35,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const checkAuth = async () => {
+    setIsLoading(true);
+    
     try {
-      // Check if there's a private key in localStorage
       const storedPrivateKey = getStoredPrivateKey();
       
-      if (storedPrivateKey) {
-        // If private key exists, get user info from server
-        try {
-          const userData = await getCurrentUser();
-          if (userData) {
-            setUser(userData);
-          } else {
-            // If server doesn't return user info, clear invalid credentials
-            clearStoredCredentials();
-            setUser(null);
-          }
-        } catch (error) {
-          // If request fails, clear invalid credentials
-          clearStoredCredentials();
-          setUser(null);
-        }
+      if (!storedPrivateKey) {
+        setUser(null);
+        return;
+      }
+      const userData = await getCurrentUser();
+      if (userData) {
+        setUser(userData);
       } else {
-        // No private key in localStorage, user is not logged in
+        clearStoredCredentials();
         setUser(null);
       }
     } catch {
+      clearStoredCredentials();
       setUser(null);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const loginWithPrivateKey = async (privateKey: string) => {
-    const userData = await loginWithPrivateKeyAPI(privateKey);
-    
-    // Store private key in localStorage for persistent login
-    localStorage.setItem('private_key', privateKey);
-    
+  const loginWithWallet = async (privateKey: string) => {
+    // Process private key locally and authenticate with server using derived public key
+    const userData = await loginWithWalletAPI(privateKey);
+
+    // Store private key in localStorage for persistent authentication
+    localStorage.setItem("private_key", privateKey);
+
     setUser(userData);
   };
-
 
   const logout = async () => {
     try {
@@ -84,23 +75,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // Continue with logout even if request fails
     }
-    
+
     // Remove private key from localStorage
     clearStoredCredentials();
-    
-    setUser(null);
-  };
 
-  const refreshUser = async () => {
-    await checkAuth();
+    setUser(null);
   };
 
   const value = {
     user,
     isLoading,
-    loginWithPrivateKey,
+    loginWithWallet,
     logout,
-    refreshUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -113,4 +99,3 @@ export function useAuth() {
   }
   return context;
 }
-

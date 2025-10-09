@@ -28,66 +28,45 @@ export interface JWTPayload {
 
 // Client-side authentication functions
 
-// New private key login function
-export async function loginWithPrivateKey(privateKey: string): Promise<User> {
-  const response = await fetch('/api/auth/login', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ privateKey }),
-  });
+/**
+ * Authenticates user using wallet private key
+ * - Private key is processed locally to derive public key
+ * - Only public key is sent to server for authentication
+ * - Private key never leaves the client for maximum security
+ */
+export async function loginWithWallet(privateKey: string): Promise<User> {
+  // Import utility function to convert private key to public key
+  const { privateKeyToPublicKeyHex } = await import('@/lib/ckb');
+  const { auth } = await import('@/lib/api');
+  
+  // Convert private key to public key hex (client-side only)
+  const publicKeyHex = privateKeyToPublicKeyHex(privateKey);
+  
+  // Send only the public key to the server (private key never transmitted)
+  const response = await auth.login({ publicKey: publicKeyHex });
 
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data.error || 'Login failed');
-  }
-
-  return data.user;
+  return response.user;
 }
 
 
-// Registration is no longer needed - users are auto-created on private key login
-export async function registerUser(email: string, username: string, password: string): Promise<User> {
-  const response = await fetch('/api/auth/register', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ email, username, password }),
-  });
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data.error || data.message || 'Registration is no longer available');
-  }
-
-  // This will now just return info about the new authentication system
-  throw new Error(data.message || 'Registration is no longer required. Please login with your private key.');
-}
 
 export async function logoutUser(): Promise<void> {
-  await fetch('/api/auth/logout', {
-    method: 'POST',
-  });
+  const { auth } = await import('@/lib/api');
+  await auth.logout();
 }
 
 export async function getCurrentUser(): Promise<User | null> {
   try {
-    const headers: HeadersInit = {};
+    const headers: Record<string, string> = {};
     
-    // If we have a private key in localStorage, generate public key and send that
+    // If we have a private key in localStorage, generate public key locally and send that
+    // (private key never leaves the client for security)
     const privateKey = getStoredPrivateKey();
     if (privateKey) {
       try {
-        // Import secp256k1 to generate public key locally
-        const { secp256k1 } = await import('@noble/curves/secp256k1');
-        const cleanPrivateKey = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey;
-        const privKeyBuffer = Buffer.from(cleanPrivateKey, 'hex');
-        const publicKey = secp256k1.getPublicKey(privKeyBuffer, false);
-        const publicKeyHex = Buffer.from(publicKey).toString('hex');
+        // Import utility function to convert private key to public key
+        const { privateKeyToPublicKeyHex } = await import('@/lib/ckb');
+        const publicKeyHex = privateKeyToPublicKeyHex(privateKey);
         
         headers['x-public-key'] = publicKeyHex;
       } catch (error) {
@@ -96,12 +75,9 @@ export async function getCurrentUser(): Promise<User | null> {
       }
     }
     
-    const response = await fetch('/api/auth/me', { headers });
-    if (response.ok) {
-      const data = await response.json();
-      return data.user;
-    }
-    return null;
+    const { auth } = await import('@/lib/api');
+    const response = await auth.me(headers);
+    return response.user;
   } catch {
     return null;
   }
