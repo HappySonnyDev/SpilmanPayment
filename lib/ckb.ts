@@ -123,12 +123,12 @@ export const createPaymentChannel = async ({
   sellerPublicKey,
   buyerPrivateKey,
   amount,
-  day,
+  seconds,
 }: {
   sellerPublicKey: string;
   buyerPrivateKey: string;
   amount: number;
-  day: number;
+  seconds: number;
 }) => {
   const client = buildClient("devnet");
   const buyerSigner = new ccc.SignerCkbPrivateKey(client, buyerPrivateKey);
@@ -162,8 +162,8 @@ export const createPaymentChannel = async ({
   console.log("📝 Step 2: Creating time-locked refund transaction...");
 
   const currentTime = Math.floor(Date.now() / 1000);
-  const DAYS_IN_SECONDS = day * 24 * 60 * 60;
-  const refundTime = currentTime + DAYS_IN_SECONDS;
+  const DURATION_IN_SECONDS = seconds;
+  const refundTime = currentTime + DURATION_IN_SECONDS;
   const refundTx = ccc.Transaction.from({
     inputs: [
       {
@@ -183,7 +183,7 @@ export const createPaymentChannel = async ({
               0x00,
               0x00,
             ]),
-          ) + BigInt(DAYS_IN_SECONDS),
+          ) + BigInt(DURATION_IN_SECONDS),
       },
     ],
     outputs: [

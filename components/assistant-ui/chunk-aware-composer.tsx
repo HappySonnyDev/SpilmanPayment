@@ -604,7 +604,16 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
                     Timestamp
                   </label>
                   <p className="text-sm bg-gray-100 dark:bg-gray-700 p-2 rounded">
-                    {new Date(selectedRecord.timestamp).toLocaleString()}
+                    {new Date(selectedRecord.timestamp).toLocaleString('en-US', {
+                      year: 'numeric',
+                      month: '2-digit',
+                      day: '2-digit',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      second: '2-digit',
+                      hour12: false,
+                      timeZone: 'Asia/Shanghai'
+                    })}
                   </p>
                 </div>
               </div>

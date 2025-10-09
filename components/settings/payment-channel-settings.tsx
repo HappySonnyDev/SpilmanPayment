@@ -26,11 +26,13 @@ interface PaymentChannel {
   channelId: string;
   amount: number;
   durationDays: number;
+  durationSeconds?: number; // Add optional seconds field
   status: number;
   statusText: string;
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
+  verifiedAt?: string; // Add verifiedAt field
   // Raw database fields for data extraction
   sellerSignature: string | null;
   refundTxData: string | null;
@@ -282,9 +284,30 @@ export const PaymentChannelSettings: React.FC = () => {
   };
 
   // Helper function to calculate period range
-  const getPeriodRange = (createdAt: string, durationDays: number) => {
-    const startDate = new Date(createdAt);
-    const endDate = new Date(startDate.getTime() + (durationDays * 24 * 60 * 60 * 1000));
+  const formatDuration = (durationDays: number, durationSeconds?: number) => {
+    // If we have duration in seconds, use that; otherwise fall back to days
+    if (durationSeconds !== undefined && durationSeconds !== null) {
+      if (durationSeconds < 60) {
+        return `${durationSeconds}s`;
+      } else if (durationSeconds < 3600) {
+        return `${Math.floor(durationSeconds / 60)}m`;
+      } else if (durationSeconds < 86400) {
+        return `${Math.floor(durationSeconds / 3600)}h`;
+      } else {
+        const days = Math.floor(durationSeconds / 86400);
+        return `${days} day${days > 1 ? 's' : ''}`;
+      }
+    }
+    // Fallback to days format
+    return `${durationDays} day${durationDays > 1 ? 's' : ''}`;
+  };
+
+  const getPeriodRange = (createdAt: string, verifiedAt: string | undefined, durationDays: number, durationSeconds?: number) => {
+    // Use verifiedAt for active channels, createdAt for inactive channels
+    const startDate = new Date(verifiedAt && verifiedAt !== null ? verifiedAt : createdAt);
+    // Use duration in seconds if available, otherwise convert days to seconds
+    const durationInSeconds = durationSeconds || (durationDays * 24 * 60 * 60);
+    const endDate = new Date(startDate.getTime() + (durationInSeconds * 1000));
     
     const formatDateTime = (date: Date) => {
       return date.toLocaleString('en-US', {
@@ -409,7 +432,7 @@ export const PaymentChannelSettings: React.FC = () => {
                       {channel.amount.toLocaleString()} CKB
                     </div>
                     <div className="text-xs text-slate-600 dark:text-slate-400">
-                      {getPeriodRange(channel.createdAt, channel.durationDays)}
+                      {getPeriodRange(channel.createdAt, channel.verifiedAt, channel.durationDays, channel.durationSeconds)}
                     </div>
                     <div>
                       {getStatusBadge(channel.status, channel.statusText)}
@@ -490,7 +513,7 @@ export const PaymentChannelSettings: React.FC = () => {
                             Period
                           </label>
                           <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg font-mono text-xs text-slate-700 dark:text-slate-300">
-                            {getPeriodRange(channel.createdAt, channel.durationDays)}
+                            {getPeriodRange(channel.createdAt, channel.verifiedAt, channel.durationDays, channel.durationSeconds)}
                           </div>
                         </div>
                         <div>

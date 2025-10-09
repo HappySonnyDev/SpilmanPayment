@@ -21,7 +21,7 @@ export function getDatabase() {
 }
 
 // Database version for migrations
-const DATABASE_VERSION = 12; // Update to version 12 for scheduled_task_logs table
+const DATABASE_VERSION = 14; // Update to version 14 for verified_at column
 
 // Initialize database tables
 function initializeDatabase() {
@@ -140,6 +140,12 @@ function runMigrations() {
   }
   if (currentVersion < 12) {
     migrateToVersion12();
+  }
+  if (currentVersion < 13) {
+    migrateToVersion13();
+  }
+  if (currentVersion < 14) {
+    migrateToVersion14();
   }
 
   // Update database version
@@ -576,6 +582,80 @@ function migrateToVersion12() {
   }
 }
 
+// Migration to version 13: Add duration_seconds column to payment_channels
+function migrateToVersion13() {
+  console.log('Running migration to version 13: adding duration_seconds column to payment_channels');
+  
+  try {
+    // Check if duration_seconds column already exists
+    const pragmaStmt = db.prepare('PRAGMA table_info(payment_channels)');
+    const columns = pragmaStmt.all() as Array<{ name: string }>;
+    const hasDurationSecondsColumn = columns.some(col => col.name === 'duration_seconds');
+    
+    if (!hasDurationSecondsColumn) {
+      // Begin transaction
+      db.exec('BEGIN TRANSACTION');
+      
+      // Add duration_seconds column
+      db.exec('ALTER TABLE payment_channels ADD COLUMN duration_seconds INTEGER');
+      
+      // Migrate existing data: convert duration_days to duration_seconds
+      db.exec('UPDATE payment_channels SET duration_seconds = duration_days * 24 * 60 * 60 WHERE duration_seconds IS NULL');
+      
+      // Create index for duration_seconds
+      db.exec('CREATE INDEX IF NOT EXISTS idx_payment_channels_duration_seconds ON payment_channels (duration_seconds)');
+      
+      // Commit transaction
+      db.exec('COMMIT');
+      
+      console.log('Successfully added duration_seconds column and migrated data');
+    } else {
+      console.log('Duration_seconds column already exists, skipping migration');
+    }
+  } catch (error) {
+    console.error('Error during migration to version 13:', error);
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+// Migration to version 14: Add verified_at column to payment_channels
+function migrateToVersion14() {
+  console.log('Running migration to version 14: adding verified_at column to payment_channels');
+  
+  try {
+    // Check if verified_at column already exists
+    const pragmaStmt = db.prepare('PRAGMA table_info(payment_channels)');
+    const columns = pragmaStmt.all() as Array<{ name: string }>;
+    const hasVerifiedAtColumn = columns.some(col => col.name === 'verified_at');
+    
+    if (!hasVerifiedAtColumn) {
+      // Begin transaction
+      db.exec('BEGIN TRANSACTION');
+      
+      // Add verified_at column
+      db.exec('ALTER TABLE payment_channels ADD COLUMN verified_at DATETIME');
+      
+      // For existing active channels, set verified_at to created_at as a reasonable default
+      db.exec(`UPDATE payment_channels SET verified_at = created_at WHERE status = ${PAYMENT_CHANNEL_STATUS.ACTIVE}`);
+      
+      // Create index for verified_at
+      db.exec('CREATE INDEX IF NOT EXISTS idx_payment_channels_verified_at ON payment_channels (verified_at)');
+      
+      // Commit transaction
+      db.exec('COMMIT');
+      
+      console.log('Successfully added verified_at column and updated existing data');
+    } else {
+      console.log('Verified_at column already exists, skipping migration');
+    }
+  } catch (error) {
+    console.error('Error during migration to version 14:', error);
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 // User interface
 export interface User {
   id: number;
@@ -789,12 +869,14 @@ export interface PaymentChannel {
   channel_id: string;
   amount: number;
   duration_days: number;
+  duration_seconds: number; // New field for duration in seconds
   status: PaymentChannelStatus;
   seller_signature: string | null;
   refund_tx_data: string | null;
   funding_tx_data: string | null;
   tx_hash: string | null; // Transaction hash after confirmation
   settle_hash: string | null; // Settlement transaction hash
+  verified_at: string | null; // When channel becomes active (funding confirmed)
   is_default: number; // SQLite stores boolean as integer (0 or 1)
   consumed_tokens: number; // Number of tokens consumed
   created_at: string;
@@ -864,6 +946,7 @@ export interface CreatePaymentChannelData {
   channel_id: string;
   amount: number;
   duration_days: number;
+  duration_seconds?: number; // Optional seconds field
   status?: PaymentChannelStatus;
   seller_signature?: string;
   refund_tx_data?: string;
@@ -881,18 +964,19 @@ export class PaymentChannelRepository {
   }
 
   createPaymentChannel(channelData: CreatePaymentChannelData): PaymentChannel {
-    const { user_id, channel_id, amount, duration_days, status, seller_signature, refund_tx_data, funding_tx_data, is_default, consumed_tokens } = channelData;
+    const { user_id, channel_id, amount, duration_days, duration_seconds, status, seller_signature, refund_tx_data, funding_tx_data, is_default, consumed_tokens } = channelData;
     
     const stmt = this.db.prepare(`
-      INSERT INTO payment_channels (user_id, channel_id, amount, duration_days, status, seller_signature, refund_tx_data, funding_tx_data, is_default, consumed_tokens)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO payment_channels (user_id, channel_id, amount, duration_days, duration_seconds, status, seller_signature, refund_tx_data, funding_tx_data, is_default, consumed_tokens)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     try {
       const channelStatus = status || PAYMENT_CHANNEL_STATUS.INACTIVE; // Default to inactive
       const defaultFlag = is_default ? 1 : 0; // Convert boolean to integer for SQLite
       const consumedTokens = consumed_tokens || 0; // Default to 0 consumed tokens
-      const result = stmt.run(user_id, channel_id, amount, duration_days, channelStatus, seller_signature || null, refund_tx_data || null, funding_tx_data || null, defaultFlag, consumedTokens);
+      const durationInSeconds = duration_seconds || (duration_days * 24 * 60 * 60); // Calculate seconds if not provided
+      const result = stmt.run(user_id, channel_id, amount, duration_days, durationInSeconds, channelStatus, seller_signature || null, refund_tx_data || null, funding_tx_data || null, defaultFlag, consumedTokens);
       return this.getPaymentChannelById(result.lastInsertRowid as number)!;
     } catch (error: unknown) {
       if (error instanceof Error && 'code' in error && error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
@@ -962,7 +1046,15 @@ export class PaymentChannelRepository {
   }
 
   activatePaymentChannel(channelId: string): PaymentChannel | null {
-    return this.updatePaymentChannelStatus(channelId, PAYMENT_CHANNEL_STATUS.ACTIVE);
+    // Set both status to ACTIVE and verified_at to current timestamp
+    const stmt = this.db.prepare(`
+      UPDATE payment_channels 
+      SET status = ?, verified_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP 
+      WHERE channel_id = ?
+    `);
+    
+    stmt.run(PAYMENT_CHANNEL_STATUS.ACTIVE, channelId);
+    return this.getPaymentChannelByChannelId(channelId);
   }
 
   invalidatePaymentChannel(channelId: string): PaymentChannel | null {
@@ -1036,13 +1128,17 @@ export class PaymentChannelRepository {
     return this.getPaymentChannelById(channelId);
   }
 
-  // Method to get expired active channels
+  // Method to get expired active channels using verified_at and duration_seconds
   getExpiredActiveChannels(): PaymentChannel[] {
     const stmt = this.db.prepare(`
       SELECT * FROM payment_channels 
       WHERE status = ? 
-      AND datetime(created_at, '+' || duration_days || ' days') < datetime('now')
-      ORDER BY created_at ASC
+      AND verified_at IS NOT NULL
+      AND (
+        (duration_seconds IS NOT NULL AND datetime(verified_at, '+' || duration_seconds || ' seconds') < datetime('now'))
+        OR (duration_seconds IS NULL AND datetime(verified_at, '+' || duration_days || ' days') < datetime('now'))
+      )
+      ORDER BY verified_at ASC
     `);
     return stmt.all(PAYMENT_CHANNEL_STATUS.ACTIVE) as PaymentChannel[];
   }

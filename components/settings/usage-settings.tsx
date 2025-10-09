@@ -9,12 +9,14 @@ interface PaymentChannel {
   channelId: string;
   amount: number;
   durationDays: number;
+  durationSeconds?: number; // Add optional seconds field
   status: number;
   statusText: string;
   isDefault: boolean;
   consumedTokens: number;
   createdAt: string;
   updatedAt: string;
+  verifiedAt?: string; // Add verifiedAt field
 }
 
 export const UsageSettings: React.FC = () => {
@@ -121,19 +123,43 @@ export const UsageSettings: React.FC = () => {
     const remainingTokens = totalTokens - consumedTokens;
     const usagePercentage = (consumedTokens / totalTokens) * 100;
     
-    // Calculate days remaining
-    const startDate = new Date(channel.createdAt);
-    const endDate = new Date(startDate.getTime() + (channel.durationDays * 24 * 60 * 60 * 1000));
+    // Calculate days remaining - use verifiedAt for active channels, createdAt for inactive
+    const startDate = new Date(channel.verifiedAt && channel.verifiedAt !== null ? channel.verifiedAt : channel.createdAt);
+    // Use duration in seconds if available, otherwise convert days to seconds
+    const durationInSeconds = channel.durationSeconds || (channel.durationDays * 24 * 60 * 60);
+    const endDate = new Date(startDate.getTime() + (durationInSeconds * 1000));
     const now = new Date();
-    const daysRemaining = Math.max(0, Math.ceil((endDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)));
+    
+    // Calculate remaining time in different units
+    const remainingMs = Math.max(0, endDate.getTime() - now.getTime());
+    const remainingSeconds = Math.floor(remainingMs / 1000);
+    const remainingDays = Math.floor(remainingSeconds / (24 * 60 * 60));
+    const remainingHours = Math.floor((remainingSeconds % (24 * 60 * 60)) / 3600);
+    const remainingMinutes = Math.floor((remainingSeconds % 3600) / 60);
+    
+    // Format remaining time display
+    let timeRemainingDisplay;
+    if (remainingDays > 0) {
+      timeRemainingDisplay = `${remainingDays} day${remainingDays > 1 ? 's' : ''}`;
+    } else if (remainingHours > 0) {
+      timeRemainingDisplay = `${remainingHours} hour${remainingHours > 1 ? 's' : ''}`;
+    } else if (remainingMinutes > 0) {
+      timeRemainingDisplay = `${remainingMinutes} minute${remainingMinutes > 1 ? 's' : ''}`;
+    } else if (remainingSeconds > 0) {
+      timeRemainingDisplay = `${remainingSeconds} second${remainingSeconds > 1 ? 's' : ''}`;
+    } else {
+      timeRemainingDisplay = 'Expired';
+    }
     
     return {
       totalTokens,
       consumedTokens,
       remainingTokens,
       usagePercentage,
-      daysRemaining,
-      endDate
+      daysRemaining: remainingDays,
+      timeRemainingDisplay,
+      endDate,
+      isExpired: remainingMs <= 0
     };
   };
 
@@ -278,10 +304,10 @@ export const UsageSettings: React.FC = () => {
                 <p className="text-sm text-slate-600 dark:text-slate-400">Remaining</p>
               </div>
               <div className="space-y-1">
-                <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
-                  {stats.daysRemaining}
+                <p className={`text-2xl font-bold ${stats.isExpired ? 'text-red-600 dark:text-red-400' : 'text-purple-600 dark:text-purple-400'}`}>
+                  {stats.timeRemainingDisplay}
                 </p>
-                <p className="text-sm text-slate-600 dark:text-slate-400">Days Left</p>
+                <p className="text-sm text-slate-600 dark:text-slate-400">Time Left</p>
               </div>
               <div className="space-y-1">
                 <p className="text-lg font-bold text-orange-600 dark:text-orange-400">

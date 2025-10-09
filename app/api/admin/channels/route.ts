@@ -41,11 +41,13 @@ export async function GET(request: NextRequest) {
         username: user?.username || 'Unknown User',
         amount: channel.amount,
         durationDays: channel.duration_days,
+        durationSeconds: channel.duration_seconds, // Include duration in seconds
         status: channel.status,
         statusText: getStatusText(channel.status),
         consumed_tokens: channel.consumed_tokens || 0,
         createdAt: channel.created_at,
         updatedAt: channel.updated_at,
+        verifiedAt: channel.verified_at, // Include verifiedAt
         tx_hash: channel.tx_hash,
         settle_hash: channel.settle_hash
       };

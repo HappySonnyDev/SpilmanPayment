@@ -19,11 +19,13 @@ interface PaymentChannel {
   username: string;
   amount: number;
   durationDays: number;
+  durationSeconds?: number; // Add optional seconds field
   status: number;
   statusText: string;
   consumed_tokens: number;
   createdAt: string;
   updatedAt: string;
+  verifiedAt?: string; // Add verifiedAt field
   tx_hash?: string;
   settle_hash?: string;
 }
@@ -71,6 +73,8 @@ export const PaymentChannelManagement: React.FC = () => {
       day: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
       timeZone: 'Asia/Shanghai'
     });
   };
@@ -181,9 +185,30 @@ export const PaymentChannelManagement: React.FC = () => {
     }
   };
 
-  const getPeriodRange = (createdAt: string, durationDays: number) => {
-    const startDate = new Date(createdAt);
-    const endDate = new Date(startDate.getTime() + (durationDays * 24 * 60 * 60 * 1000));
+  const formatDuration = (durationDays: number, durationSeconds?: number) => {
+    // If we have duration in seconds, use that; otherwise fall back to days
+    if (durationSeconds !== undefined && durationSeconds !== null) {
+      if (durationSeconds < 60) {
+        return `${durationSeconds}s`;
+      } else if (durationSeconds < 3600) {
+        return `${Math.floor(durationSeconds / 60)}m`;
+      } else if (durationSeconds < 86400) {
+        return `${Math.floor(durationSeconds / 3600)}h`;
+      } else {
+        const days = Math.floor(durationSeconds / 86400);
+        return `${days} day${days > 1 ? 's' : ''}`;
+      }
+    }
+    // Fallback to days format
+    return `${durationDays} day${durationDays > 1 ? 's' : ''}`;
+  };
+
+  const getPeriodRange = (createdAt: string, verifiedAt: string | undefined, durationDays: number, durationSeconds?: number) => {
+    // Use verifiedAt for active channels, createdAt for inactive channels
+    const startDate = new Date(verifiedAt && verifiedAt !== null ? verifiedAt : createdAt);
+    // Use duration in seconds if available, otherwise convert days to seconds
+    const durationInSeconds = durationSeconds || (durationDays * 24 * 60 * 60);
+    const endDate = new Date(startDate.getTime() + (durationInSeconds * 1000));
     
     const formatDateTime = (date: Date) => {
       return date.toLocaleString('en-US', {
@@ -285,7 +310,7 @@ export const PaymentChannelManagement: React.FC = () => {
                     {channel.amount.toLocaleString()} CKB
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                    {channel.durationDays} days
+                    {formatDuration(channel.durationDays, channel.durationSeconds)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {getStatusBadge(channel.status, channel.statusText)}
@@ -409,7 +434,7 @@ export const PaymentChannelManagement: React.FC = () => {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Duration</label>
                   <p className="text-sm text-gray-900 dark:text-white">
-                    {selectedChannel.durationDays} days
+                    {formatDuration(selectedChannel.durationDays, selectedChannel.durationSeconds)}
                   </p>
                 </div>
                 
@@ -430,7 +455,7 @@ export const PaymentChannelManagement: React.FC = () => {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Period Range</label>
                   <p className="text-sm text-gray-900 dark:text-white font-mono">
-                    {getPeriodRange(selectedChannel.createdAt, selectedChannel.durationDays)}
+                    {getPeriodRange(selectedChannel.createdAt, selectedChannel.verifiedAt, selectedChannel.durationDays, selectedChannel.durationSeconds)}
                   </p>
                 </div>
                 

@@ -16,7 +16,7 @@ interface CreateChannelRequest {
   refundTx: Record<string, unknown>; // CKB transaction structure
   fundingTx: Record<string, unknown>; // CKB funding transaction structure
   amount: number;
-  day: number;
+  seconds: number;
 }
 
 // Helper function to get status text
@@ -38,13 +38,13 @@ export async function POST(request: NextRequest) {
     // Require authentication
     const user = await requireAuth(request);
 
-    const { refundTx, fundingTx, amount, day }: CreateChannelRequest =
+    const { refundTx, fundingTx, amount, seconds }: CreateChannelRequest =
       await request.json();
 
     // Validate input
-    if (!refundTx || !fundingTx || !amount || !day) {
+    if (!refundTx || !fundingTx || !amount || !seconds) {
       return NextResponse.json(
-        { error: "refundTx, fundingTx, amount, and day are required" },
+        { error: "refundTx, fundingTx, amount, and seconds are required" },
         { status: 400 },
       );
     }
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
           0x00,
           0x00,
         ]),
-      ) + BigInt(day * 24 * 60 * 60),
+      ) + BigInt(seconds),
     );
 
     // Generate unique channel ID
@@ -96,7 +96,8 @@ export async function POST(request: NextRequest) {
       user_id: user.id,
       channel_id: channelId,
       amount,
-      duration_days: day,
+      duration_days: seconds / (24 * 60 * 60), // Convert seconds to days for backward compatibility
+      duration_seconds: seconds, // Store actual seconds
       status: PAYMENT_CHANNEL_STATUS.INACTIVE, // Set to inactive when created
       seller_signature: Buffer.from(sellerSignature).toString("hex"),
       refund_tx_data: JSON.stringify(refundTx),
@@ -114,7 +115,7 @@ export async function POST(request: NextRequest) {
         refundTx: refundTx,
         fundingTx: fundingTx,
         amount,
-        duration: day,
+        duration: seconds,
         createdAt: paymentChannel.created_at,
       },
     });

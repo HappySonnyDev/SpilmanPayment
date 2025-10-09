@@ -35,12 +35,14 @@ export async function GET(request: NextRequest) {
       channelId: channel.channel_id,
       amount: channel.amount,
       durationDays: channel.duration_days,
+      durationSeconds: channel.duration_seconds, // Include duration in seconds
       status: channel.status,
       statusText: getStatusText(channel.status),
       isDefault: Boolean(channel.is_default), // Convert SQLite integer (0/1) to boolean
       consumedTokens: channel.consumed_tokens || 0,
       createdAt: channel.created_at,
       updatedAt: channel.updated_at,
+      verifiedAt: channel.verified_at, // Include verifiedAt
       // Include raw database fields for frontend processing
       sellerSignature: channel.seller_signature,
       refundTxData: channel.refund_tx_data,
