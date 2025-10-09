@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
     const stream = createUIMessageStream({
       execute: ({ writer }) => {
         const result = streamText({
-          model: openrouter("deepseek/deepseek-chat-v3.1:free"),
+          model: openrouter("qwen/qwen3-14b:free"),
           messages: convertToModelMessages(messages),
           onChunk: ({ chunk }) => {
             // Track tokens for each chunk in real-time

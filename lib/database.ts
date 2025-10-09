@@ -21,7 +21,7 @@ export function getDatabase() {
 }
 
 // Database version for migrations
-const DATABASE_VERSION = 10; // Update to version 10 for payment transaction data table
+const DATABASE_VERSION = 11; // Update to version 11 for settle_hash field
 
 // Initialize database tables
 function initializeDatabase() {
@@ -707,6 +707,7 @@ export interface PaymentChannel {
   refund_tx_data: string | null;
   funding_tx_data: string | null;
   tx_hash: string | null; // Transaction hash after confirmation
+  settle_hash: string | null; // Settlement transaction hash
   is_default: number; // SQLite stores boolean as integer (0 or 1)
   consumed_tokens: number; // Number of tokens consumed
   created_at: string;
@@ -818,6 +819,17 @@ export class PaymentChannelRepository {
     `);
     
     stmt.run(txHash, channelId);
+    return this.getPaymentChannelByChannelId(channelId);
+  }
+
+  updatePaymentChannelSettleHash(channelId: string, settleHash: string): PaymentChannel | null {
+    const stmt = this.db.prepare(`
+      UPDATE payment_channels 
+      SET settle_hash = ?, updated_at = CURRENT_TIMESTAMP 
+      WHERE channel_id = ?
+    `);
+    
+    stmt.run(settleHash, channelId);
     return this.getPaymentChannelByChannelId(channelId);
   }
 

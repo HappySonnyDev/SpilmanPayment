@@ -9,7 +9,8 @@
     "lint": "next lint",
     "prettier": "prettier --check .",
     "prettier:fix": "prettier --write .",
-    "clear-channels": "node scripts/clear-payment-channels.js"
+    "clear-channels": "node scripts/clear-payment-channels.js",
+    "clear-tables": "node scripts/clear-database-tables.js"
   },
   "prettier": {
     "plugins": [

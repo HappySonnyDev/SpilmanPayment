@@ -11,6 +11,7 @@ import {
   buildClient,
   generateCkbSecp256k1Signature,
   createWitnessData,
+  jsonStr,
 } from "@/lib/ckb";
 
 export async function POST(request: NextRequest) {
@@ -155,6 +156,7 @@ export async function POST(request: NextRequest) {
 
       // Submit the transaction to CKB network
       const client = buildClient("devnet");
+      console.log(jsonStr(transaction),'transaction==========')
       const txHash = await client.sendTransaction(transaction);
 
       // Update channel status to SETTLED
@@ -164,7 +166,7 @@ export async function POST(request: NextRequest) {
       );
 
       // Update the channel with the settlement transaction hash
-      paymentChannelRepo.updatePaymentChannelTxHash(channelId, txHash);
+      paymentChannelRepo.updatePaymentChannelSettleHash(channelId, txHash);
 
       return NextResponse.json({
         success: true,
