@@ -4,7 +4,13 @@ import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, Eye, Edit, Trash2, RefreshCw } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Search, Eye, Edit, Trash2, RefreshCw, Gavel, Loader2, Info } from "lucide-react";
 
 interface PaymentChannel {
   id: number;
@@ -19,6 +25,7 @@ interface PaymentChannel {
   createdAt: string;
   updatedAt: string;
   tx_hash?: string;
+  settle_hash?: string;
 }
 
 export const PaymentChannelManagement: React.FC = () => {
@@ -27,6 +34,7 @@ export const PaymentChannelManagement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedChannel, setSelectedChannel] = useState<PaymentChannel | null>(null);
   const [showChannelDetails, setShowChannelDetails] = useState(false);
+  const [settlingChannels, setSettlingChannels] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     fetchChannels();
@@ -52,7 +60,8 @@ export const PaymentChannelManagement: React.FC = () => {
   const filteredChannels = channels.filter(channel => 
     channel.channelId.toLowerCase().includes(searchTerm.toLowerCase()) ||
     channel.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (channel.tx_hash && channel.tx_hash.toLowerCase().includes(searchTerm.toLowerCase()))
+    (channel.tx_hash && channel.tx_hash.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (channel.settle_hash && channel.settle_hash.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   const formatDate = (dateString: string) => {
@@ -88,6 +97,12 @@ export const PaymentChannelManagement: React.FC = () => {
             {statusText}
           </Badge>
         );
+      case 4: // Settled
+        return (
+          <Badge variant="outline" className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+            {statusText}
+          </Badge>
+        );
       default:
         return (
           <Badge variant="secondary" className="bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400">
@@ -119,6 +134,50 @@ export const PaymentChannelManagement: React.FC = () => {
       }
     } catch (error) {
       console.error('Error updating channel status:', error);
+    }
+  };
+
+  const settleChannel = async (channelId: number) => {
+    try {
+      setSettlingChannels(prev => new Set([...prev, channelId]));
+      
+      const response = await fetch(`/api/admin/channels/${channelId}/settle`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        
+        // Format the alert message based on settlement type
+        let alertMessage = `Channel settled successfully!\n`;
+        if (result.txHash) {
+          if (result.note) {
+            alertMessage += `Settlement Type: ${result.note}\n`;
+            alertMessage += `Reference ID: ${result.txHash}\n`;
+          } else {
+            alertMessage += `Transaction Hash: ${result.txHash}\n`;
+          }
+        }
+        alertMessage += `Channel Status: ${result.channelStatus}`;
+        
+        alert(alertMessage);
+        await fetchChannels();
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to settle channel');
+      }
+    } catch (error) {
+      console.error('Error settling channel:', error);
+      alert(`Failed to settle channel: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setSettlingChannels(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(channelId);
+        return newSet;
+      });
     }
   };
 
@@ -158,7 +217,7 @@ export const PaymentChannelManagement: React.FC = () => {
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
           <Input
             type="text"
-            placeholder="Search by channel ID, username, or tx hash..."
+            placeholder="Search by channel ID, username, tx hash, or settle hash..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10"
@@ -256,14 +315,42 @@ export const PaymentChannelManagement: React.FC = () => {
                       </Button>
                     )}
                     {channel.status === 2 && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => updateChannelStatus(channel.id, 3)}
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        Invalidate
-                      </Button>
+                      <>
+                        {/* <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => updateChannelStatus(channel.id, 3)}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          Invalidate
+                        </Button> */}
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => settleChannel(channel.id)}
+                                disabled={settlingChannels.has(channel.id)}
+                                className="text-blue-600 hover:text-blue-700"
+                              >
+                                {settlingChannels.has(channel.id) ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Gavel className="h-4 w-4" />
+                                )}
+                                {settlingChannels.has(channel.id) ? 'Settling...' : 'Settle'}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p className="text-sm max-w-xs">
+                                Settlement will use blockchain transaction if chunk payment data is available,
+                                otherwise will perform database-only settlement for administrative purposes.
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </>
                     )}
                   </td>
                 </tr>
@@ -366,6 +453,15 @@ export const PaymentChannelManagement: React.FC = () => {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Transaction Hash</label>
                     <p className="text-sm text-gray-900 dark:text-white font-mono break-all bg-gray-100 dark:bg-gray-700 p-2 rounded">
                       {selectedChannel.tx_hash}
+                    </p>
+                  </div>
+                )}
+                
+                {selectedChannel.settle_hash && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Settlement Hash</label>
+                    <p className="text-sm text-gray-900 dark:text-white font-mono break-all bg-gray-100 dark:bg-gray-700 p-2 rounded">
+                      {selectedChannel.settle_hash}
                     </p>
                   </div>
                 )}

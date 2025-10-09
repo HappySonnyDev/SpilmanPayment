@@ -21,7 +21,7 @@ export function getDatabase() {
 }
 
 // Database version for migrations
-const DATABASE_VERSION = 11; // Update to version 11 for settle_hash field
+const DATABASE_VERSION = 12; // Update to version 12 for scheduled_task_logs table
 
 // Initialize database tables
 function initializeDatabase() {
@@ -134,6 +134,12 @@ function runMigrations() {
   }
   if (currentVersion < 10) {
     migrateToVersion10();
+  }
+  if (currentVersion < 11) {
+    migrateToVersion11();
+  }
+  if (currentVersion < 12) {
+    migrateToVersion12();
   }
 
   // Update database version
@@ -490,6 +496,86 @@ function migrateToVersion10() {
   }
 }
 
+// Migration to version 11: Add settle_hash column to payment_channels table
+function migrateToVersion11() {
+  console.log('Running migration to version 11: adding settle_hash column to payment_channels');
+  
+  try {
+    // Check if settle_hash column already exists
+    const pragmaStmt = db.prepare('PRAGMA table_info(payment_channels)');
+    const columns = pragmaStmt.all() as Array<{ name: string }>;
+    const hasSettleHashColumn = columns.some(col => col.name === 'settle_hash');
+    
+    if (!hasSettleHashColumn) {
+      // Begin transaction
+      db.exec('BEGIN TRANSACTION');
+      
+      // Add settle_hash column
+      db.exec('ALTER TABLE payment_channels ADD COLUMN settle_hash TEXT');
+      
+      // Create index for settle_hash
+      db.exec('CREATE INDEX IF NOT EXISTS idx_payment_channels_settle_hash ON payment_channels (settle_hash)');
+      
+      // Commit transaction
+      db.exec('COMMIT');
+      
+      console.log('Successfully added settle_hash column');
+    } else {
+      console.log('Settle_hash column already exists, skipping migration');
+    }
+  } catch (error) {
+    console.error('Error during migration to version 11:', error);
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+// Migration to version 12: Create scheduled_task_logs table
+function migrateToVersion12() {
+  console.log('Running migration to version 12: creating scheduled_task_logs table');
+  
+  try {
+    // Begin transaction
+    db.exec('BEGIN TRANSACTION');
+    
+    // Create scheduled_task_logs table
+    const createScheduledTaskLogsTable = `
+      CREATE TABLE IF NOT EXISTS scheduled_task_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_name TEXT NOT NULL,
+        task_type TEXT NOT NULL,
+        execution_status TEXT NOT NULL,
+        started_at DATETIME NOT NULL,
+        completed_at DATETIME,
+        duration_ms INTEGER,
+        result_data TEXT,
+        error_message TEXT,
+        settled_count INTEGER DEFAULT 0,
+        checked_count INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+    
+    db.exec(createScheduledTaskLogsTable);
+    
+    // Create indexes for performance
+    db.exec('CREATE INDEX IF NOT EXISTS idx_scheduled_task_logs_task_name ON scheduled_task_logs (task_name)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_scheduled_task_logs_task_type ON scheduled_task_logs (task_type)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_scheduled_task_logs_status ON scheduled_task_logs (execution_status)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_scheduled_task_logs_started_at ON scheduled_task_logs (started_at)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_scheduled_task_logs_created_at ON scheduled_task_logs (created_at)');
+    
+    // Commit transaction
+    db.exec('COMMIT');
+    
+    console.log('Successfully created scheduled_task_logs table');
+  } catch (error) {
+    console.error('Error during migration to version 12:', error);
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 // User interface
 export interface User {
   id: number;
@@ -739,6 +825,36 @@ export interface CreateChunkPaymentData {
   channel_id?: string;
   tokens_count: number;
   is_paid?: boolean; // API accepts boolean, will be converted to integer internally
+}
+
+// Scheduled Task Log interface
+export interface ScheduledTaskLog {
+  id: number;
+  task_name: string;
+  task_type: string;
+  execution_status: string;
+  started_at: string;
+  completed_at: string | null;
+  duration_ms: number | null;
+  result_data: string | null;
+  error_message: string | null;
+  settled_count: number;
+  checked_count: number;
+  created_at: string;
+}
+
+// Scheduled Task Log creation interface
+export interface CreateScheduledTaskLogData {
+  task_name: string;
+  task_type: string;
+  execution_status: string;
+  started_at: string;
+  completed_at?: string;
+  duration_ms?: number;
+  result_data?: string;
+  error_message?: string;
+  settled_count?: number;
+  checked_count?: number;
 }
 
 // Payment Channel creation interface
@@ -1055,5 +1171,202 @@ export class ChunkPaymentRepository {
     const stmt = this.db.prepare('SELECT session_id FROM chunk_payments WHERE user_id = ? ORDER BY created_at DESC LIMIT 1');
     const result = stmt.get(userId) as { session_id: string } | null;
     return result?.session_id || null;
+  }
+}
+
+// Scheduled Task Log database operations
+export class ScheduledTaskLogRepository {
+  private db: Database.Database;
+
+  constructor() {
+    this.db = getDatabase();
+  }
+
+  createTaskLog(logData: CreateScheduledTaskLogData): ScheduledTaskLog {
+    const { 
+      task_name, 
+      task_type, 
+      execution_status, 
+      started_at, 
+      completed_at, 
+      duration_ms, 
+      result_data, 
+      error_message, 
+      settled_count, 
+      checked_count 
+    } = logData;
+    
+    const stmt = this.db.prepare(`
+      INSERT INTO scheduled_task_logs (
+        task_name, task_type, execution_status, started_at, completed_at, 
+        duration_ms, result_data, error_message, settled_count, checked_count
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    try {
+      const result = stmt.run(
+        task_name,
+        task_type,
+        execution_status,
+        started_at,
+        completed_at || null,
+        duration_ms || null,
+        result_data || null,
+        error_message || null,
+        settled_count || 0,
+        checked_count || 0
+      );
+      return this.getTaskLogById(result.lastInsertRowid as number)!;
+    } catch (error) {
+      console.error('Error creating task log:', error);
+      throw error;
+    }
+  }
+
+  getTaskLogById(id: number): ScheduledTaskLog | null {
+    const stmt = this.db.prepare('SELECT * FROM scheduled_task_logs WHERE id = ?');
+    return stmt.get(id) as ScheduledTaskLog | null;
+  }
+
+  getTaskLogsByName(taskName: string, limit: number = 100): ScheduledTaskLog[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM scheduled_task_logs 
+      WHERE task_name = ? 
+      ORDER BY started_at DESC 
+      LIMIT ?
+    `);
+    return stmt.all(taskName, limit) as ScheduledTaskLog[];
+  }
+
+  getTaskLogsByNamePaginated(taskName: string, page: number = 1, pageSize: number = 20): {
+    logs: ScheduledTaskLog[];
+    total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+  } {
+    const offset = (page - 1) * pageSize;
+    
+    // Get total count
+    const countStmt = this.db.prepare(`
+      SELECT COUNT(*) as count FROM scheduled_task_logs 
+      WHERE task_name = ?
+    `);
+    const { count: total } = countStmt.get(taskName) as { count: number };
+    
+    // Get paginated logs
+    const stmt = this.db.prepare(`
+      SELECT * FROM scheduled_task_logs 
+      WHERE task_name = ? 
+      ORDER BY started_at DESC 
+      LIMIT ? OFFSET ?
+    `);
+    const logs = stmt.all(taskName, pageSize, offset) as ScheduledTaskLog[];
+    
+    return {
+      logs,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize)
+    };
+  }
+
+  getTaskLogsByType(taskType: string, limit: number = 100): ScheduledTaskLog[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM scheduled_task_logs 
+      WHERE task_type = ? 
+      ORDER BY started_at DESC 
+      LIMIT ?
+    `);
+    return stmt.all(taskType, limit) as ScheduledTaskLog[];
+  }
+
+  getTaskLogsByStatus(status: string, limit: number = 100): ScheduledTaskLog[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM scheduled_task_logs 
+      WHERE execution_status = ? 
+      ORDER BY started_at DESC 
+      LIMIT ?
+    `);
+    return stmt.all(status, limit) as ScheduledTaskLog[];
+  }
+
+  getAllTaskLogs(limit: number = 100): ScheduledTaskLog[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM scheduled_task_logs 
+      ORDER BY started_at DESC 
+      LIMIT ?
+    `);
+    return stmt.all(limit) as ScheduledTaskLog[];
+  }
+
+  updateTaskLog(id: number, updateData: Partial<CreateScheduledTaskLogData>): ScheduledTaskLog | null {
+    const fields = [];
+    const values = [];
+    
+    for (const [key, value] of Object.entries(updateData)) {
+      if (value !== undefined) {
+        fields.push(`${key} = ?`);
+        values.push(value);
+      }
+    }
+    
+    if (fields.length === 0) {
+      return this.getTaskLogById(id);
+    }
+    
+    values.push(id);
+    const stmt = this.db.prepare(`
+      UPDATE scheduled_task_logs 
+      SET ${fields.join(', ')}
+      WHERE id = ?
+    `);
+    
+    stmt.run(...values);
+    return this.getTaskLogById(id);
+  }
+
+  deleteOldTaskLogs(daysOld: number = 30): number {
+    const cutoffDate = new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000).toISOString();
+    const stmt = this.db.prepare('DELETE FROM scheduled_task_logs WHERE created_at < ?');
+    const result = stmt.run(cutoffDate);
+    return result.changes;
+  }
+
+  getTaskExecutionStats(taskName?: string): {
+    total: number;
+    success: number;
+    failed: number;
+    running: number;
+    avgDuration: number | null;
+  } {
+    let whereClause = '';
+    const params: (string | number)[] = [];
+    
+    if (taskName) {
+      whereClause = 'WHERE task_name = ?';
+      params.push(taskName);
+    }
+    
+    const stmt = this.db.prepare(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN execution_status = 'success' THEN 1 ELSE 0 END) as success,
+        SUM(CASE WHEN execution_status = 'failed' THEN 1 ELSE 0 END) as failed,
+        SUM(CASE WHEN execution_status = 'running' THEN 1 ELSE 0 END) as running,
+        AVG(CASE WHEN duration_ms IS NOT NULL THEN duration_ms ELSE NULL END) as avgDuration
+      FROM scheduled_task_logs
+      ${whereClause}
+    `);
+    
+    return stmt.get(...params) as {
+      total: number;
+      success: number;
+      failed: number;
+      running: number;
+      avgDuration: number | null;
+    };
   }
 }

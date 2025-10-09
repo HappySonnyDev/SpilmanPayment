@@ -53,15 +53,38 @@ npm run clear-channels
 node scripts/clear-payment-channels.js
 ```
 
-## Safety Features
+### 3. cron-auto-settle.js (Automated Settlement)
 
-Both scripts include important safety features:
+🆕 **New!** Simple cron job that calls dedicated API endpoints for automated tasks.
 
-- **Structure Preservation**: Table schemas remain intact
-- **Validation**: Only supported tables can be cleared
-- **Confirmation Info**: Clear warnings before execution
-- **Verification**: Post-operation record counts
-- **Error Handling**: Graceful failure handling
+**Features:**
+- ✅ Auto-settle payment channels expiring within 15 minutes
+- ✅ Calls server-side API endpoints for actual logic
+- ✅ Minimal cron code - just HTTP requests
+- ✅ Clean separation of concerns
+- ✅ Easy to monitor and debug
+
+**Usage Examples:**
+
+```bash
+# Run auto-settlement check manually
+npm run cron-auto-settle
+
+# Run the scheduler (runs auto-settlement every minute)
+npm run cron-scheduler
+
+# Direct node execution
+node scripts/cron-auto-settle.js
+node scripts/cron-scheduler.js
+```
+
+**Architecture:**
+- `cron-auto-settle.js` - Simple HTTP client that calls the API
+- `cron-scheduler.js` - Cron scheduler that runs the auto-settle script every minute
+- `POST /api/admin/auto-settle-expiring` - Server-side API with actual settlement logic
+
+**Environment Variables:**
+- `API_BASE_URL` - Base URL for API calls (default: http://localhost:3000)
 
 ## Warning for Users Table
 
@@ -69,8 +92,8 @@ Both scripts include important safety features:
 
 ## Database Schema Compatibility
 
-These scripts are compatible with database version 10 and include support for:
-- Payment channel settlements ([Payment Channel Status Extension](memory://b322f24a-4382-46ad-a522-8ea8ca4df040))
-- Chunk-level payment tracking
+These scripts are compatible with database version 11 and include support for:
+- Payment channel settlements with settle_hash tracking
+- Chunk-level payment tracking with transaction data
 - User session management
-- Transaction data storage
+- Transaction data storage for blockchain operations

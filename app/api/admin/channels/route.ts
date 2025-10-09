@@ -10,6 +10,8 @@ function getStatusText(status: number): string {
       return 'Active';
     case PAYMENT_CHANNEL_STATUS.INVALID:
       return 'Invalid';
+    case PAYMENT_CHANNEL_STATUS.SETTLED:
+      return 'Settled';
     default:
       return 'Unknown';
   }
@@ -42,7 +44,8 @@ export async function GET(request: NextRequest) {
         consumed_tokens: channel.consumed_tokens || 0,
         createdAt: channel.created_at,
         updatedAt: channel.updated_at,
-        tx_hash: channel.tx_hash
+        tx_hash: channel.tx_hash,
+        settle_hash: channel.settle_hash
       };
     });
 
