@@ -4,7 +4,13 @@ import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, Eye, Edit, Trash2, RefreshCw } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Search, Eye, Edit, Trash2, RefreshCw, Gavel, Loader2, Info } from "lucide-react";
 
 interface PaymentChannel {
   id: number;
@@ -13,12 +19,15 @@ interface PaymentChannel {
   username: string;
   amount: number;
   durationDays: number;
+  durationSeconds?: number; // Add optional seconds field
   status: number;
   statusText: string;
   consumed_tokens: number;
   createdAt: string;
   updatedAt: string;
+  verifiedAt?: string; // Add verifiedAt field
   tx_hash?: string;
+  settle_hash?: string;
 }
 
 export const PaymentChannelManagement: React.FC = () => {
@@ -27,6 +36,7 @@ export const PaymentChannelManagement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedChannel, setSelectedChannel] = useState<PaymentChannel | null>(null);
   const [showChannelDetails, setShowChannelDetails] = useState(false);
+  const [settlingChannels, setSettlingChannels] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     fetchChannels();
@@ -52,7 +62,8 @@ export const PaymentChannelManagement: React.FC = () => {
   const filteredChannels = channels.filter(channel => 
     channel.channelId.toLowerCase().includes(searchTerm.toLowerCase()) ||
     channel.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (channel.tx_hash && channel.tx_hash.toLowerCase().includes(searchTerm.toLowerCase()))
+    (channel.tx_hash && channel.tx_hash.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (channel.settle_hash && channel.settle_hash.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   const formatDate = (dateString: string) => {
@@ -62,6 +73,8 @@ export const PaymentChannelManagement: React.FC = () => {
       day: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
       timeZone: 'Asia/Shanghai'
     });
   };
@@ -85,6 +98,12 @@ export const PaymentChannelManagement: React.FC = () => {
       case 3: // Invalid
         return (
           <Badge variant="destructive" className="bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
+            {statusText}
+          </Badge>
+        );
+      case 4: // Settled
+        return (
+          <Badge variant="outline" className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
             {statusText}
           </Badge>
         );
@@ -122,9 +141,74 @@ export const PaymentChannelManagement: React.FC = () => {
     }
   };
 
-  const getPeriodRange = (createdAt: string, durationDays: number) => {
-    const startDate = new Date(createdAt);
-    const endDate = new Date(startDate.getTime() + (durationDays * 24 * 60 * 60 * 1000));
+  const settleChannel = async (channelId: number) => {
+    try {
+      setSettlingChannels(prev => new Set([...prev, channelId]));
+      
+      const response = await fetch(`/api/admin/channels/${channelId}/settle`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        
+        // Format the alert message based on settlement type
+        let alertMessage = `Channel settled successfully!\n`;
+        if (result.txHash) {
+          if (result.note) {
+            alertMessage += `Settlement Type: ${result.note}\n`;
+            alertMessage += `Reference ID: ${result.txHash}\n`;
+          } else {
+            alertMessage += `Transaction Hash: ${result.txHash}\n`;
+          }
+        }
+        alertMessage += `Channel Status: ${result.channelStatus}`;
+        
+        alert(alertMessage);
+        await fetchChannels();
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to settle channel');
+      }
+    } catch (error) {
+      console.error('Error settling channel:', error);
+      alert(`Failed to settle channel: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setSettlingChannels(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(channelId);
+        return newSet;
+      });
+    }
+  };
+
+  const formatDuration = (durationDays: number, durationSeconds?: number) => {
+    // If we have duration in seconds, use that; otherwise fall back to days
+    if (durationSeconds !== undefined && durationSeconds !== null) {
+      if (durationSeconds < 60) {
+        return `${durationSeconds}s`;
+      } else if (durationSeconds < 3600) {
+        return `${Math.floor(durationSeconds / 60)}m`;
+      } else if (durationSeconds < 86400) {
+        return `${Math.floor(durationSeconds / 3600)}h`;
+      } else {
+        const days = Math.floor(durationSeconds / 86400);
+        return `${days} day${days > 1 ? 's' : ''}`;
+      }
+    }
+    // Fallback to days format
+    return `${durationDays} day${durationDays > 1 ? 's' : ''}`;
+  };
+
+  const getPeriodRange = (createdAt: string, verifiedAt: string | undefined, durationDays: number, durationSeconds?: number) => {
+    // Use verifiedAt for active channels, createdAt for inactive channels
+    const startDate = new Date(verifiedAt && verifiedAt !== null ? verifiedAt : createdAt);
+    // Use duration in seconds if available, otherwise convert days to seconds
+    const durationInSeconds = durationSeconds || (durationDays * 24 * 60 * 60);
+    const endDate = new Date(startDate.getTime() + (durationInSeconds * 1000));
     
     const formatDateTime = (date: Date) => {
       return date.toLocaleString('en-US', {
@@ -158,7 +242,7 @@ export const PaymentChannelManagement: React.FC = () => {
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
           <Input
             type="text"
-            placeholder="Search by channel ID, username, or tx hash..."
+            placeholder="Search by channel ID, username, tx hash, or settle hash..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10"
@@ -226,7 +310,7 @@ export const PaymentChannelManagement: React.FC = () => {
                     {channel.amount.toLocaleString()} CKB
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                    {channel.durationDays} days
+                    {formatDuration(channel.durationDays, channel.durationSeconds)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {getStatusBadge(channel.status, channel.statusText)}
@@ -256,14 +340,42 @@ export const PaymentChannelManagement: React.FC = () => {
                       </Button>
                     )}
                     {channel.status === 2 && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => updateChannelStatus(channel.id, 3)}
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        Invalidate
-                      </Button>
+                      <>
+                        {/* <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => updateChannelStatus(channel.id, 3)}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          Invalidate
+                        </Button> */}
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => settleChannel(channel.id)}
+                                disabled={settlingChannels.has(channel.id)}
+                                className="text-blue-600 hover:text-blue-700"
+                              >
+                                {settlingChannels.has(channel.id) ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Gavel className="h-4 w-4" />
+                                )}
+                                {settlingChannels.has(channel.id) ? 'Settling...' : 'Settle'}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p className="text-sm max-w-xs">
+                                Settlement will use blockchain transaction if chunk payment data is available,
+                                otherwise will perform database-only settlement for administrative purposes.
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </>
                     )}
                   </td>
                 </tr>
@@ -322,7 +434,7 @@ export const PaymentChannelManagement: React.FC = () => {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Duration</label>
                   <p className="text-sm text-gray-900 dark:text-white">
-                    {selectedChannel.durationDays} days
+                    {formatDuration(selectedChannel.durationDays, selectedChannel.durationSeconds)}
                   </p>
                 </div>
                 
@@ -343,7 +455,7 @@ export const PaymentChannelManagement: React.FC = () => {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Period Range</label>
                   <p className="text-sm text-gray-900 dark:text-white font-mono">
-                    {getPeriodRange(selectedChannel.createdAt, selectedChannel.durationDays)}
+                    {getPeriodRange(selectedChannel.createdAt, selectedChannel.verifiedAt, selectedChannel.durationDays, selectedChannel.durationSeconds)}
                   </p>
                 </div>
                 
@@ -366,6 +478,15 @@ export const PaymentChannelManagement: React.FC = () => {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Transaction Hash</label>
                     <p className="text-sm text-gray-900 dark:text-white font-mono break-all bg-gray-100 dark:bg-gray-700 p-2 rounded">
                       {selectedChannel.tx_hash}
+                    </p>
+                  </div>
+                )}
+                
+                {selectedChannel.settle_hash && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Settlement Hash</label>
+                    <p className="text-sm text-gray-900 dark:text-white font-mono break-all bg-gray-100 dark:bg-gray-700 p-2 rounded">
+                      {selectedChannel.settle_hash}
                     </p>
                   </div>
                 )}

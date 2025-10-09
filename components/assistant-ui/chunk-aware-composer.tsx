@@ -50,18 +50,18 @@ interface PaymentChannel {
 interface PaymentRecord {
   chunkId: string;
   tokens: number;
-  paidAmount: number;
-  remainingAmount: number;
+  consumedTokens: number;
+  remainingTokens: number;
   timestamp: string;
   transactionData?: Record<string, unknown>;
 }
 
 interface PaymentChannelInfo {
-  cumulativePayment: number;
-  remainingBalance: number;
+  consumedTokens: number;
+  remainingTokens: number;
   channelId: string;
-  channelTotalAmount: number;
-  tokens: number;
+  channelTotalTokens: number;
+  currentChunkTokens: number;
 }
 
 export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
@@ -142,12 +142,17 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
           
           if (defaultChannel) {
             // Initialize payment channel info from current channel
+            // Convert CKB amounts to tokens using 1 CKB = 0.01 Token ratio
+            const totalTokens = Math.floor(defaultChannel.amount * 0.01);
+            const consumedTokens = defaultChannel.consumedTokens;
+            const remainingTokens = totalTokens - consumedTokens;
+            
             setPaymentChannelInfo({
-              tokens: 0,
-              cumulativePayment: defaultChannel.consumedTokens,
-              remainingBalance: defaultChannel.amount - defaultChannel.consumedTokens,
+              currentChunkTokens: 0,
+              consumedTokens: consumedTokens,
+              remainingTokens: remainingTokens,
               channelId: defaultChannel.channelId,
-              channelTotalAmount: defaultChannel.amount
+              channelTotalTokens: totalTokens
             });
             
             // Payment history will only show real chunk payment transactions
@@ -178,12 +183,17 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
     const handlePaymentChannelData = (event: CustomEvent) => {
       const { tokens, cumulativePayment, remainingBalance, channelId, channelTotalAmount } = event.detail;
       
+      // Convert CKB amounts to tokens for display
+      const totalTokens = Math.floor(channelTotalAmount * 0.01);
+      const consumedTokens = Math.floor(cumulativePayment * 0.01);
+      const remainingTokens = totalTokens - consumedTokens;
+      
       setPaymentChannelInfo({
-        tokens,
-        cumulativePayment,
-        remainingBalance,
+        currentChunkTokens: tokens,
+        consumedTokens: consumedTokens,
+        remainingTokens: remainingTokens,
         channelId,
-        channelTotalAmount
+        channelTotalTokens: totalTokens
       });
     };
 
@@ -194,8 +204,8 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
       const paymentRecord: PaymentRecord = {
         chunkId,
         tokens,
-        paidAmount,
-        remainingAmount,
+        consumedTokens: Math.floor(paidAmount * 0.01),
+        remainingTokens: Math.floor(remainingAmount * 0.01),
         timestamp,
         transactionData
       };
@@ -258,8 +268,8 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
       const paymentRecord: PaymentRecord = {
         chunkId: result.chunkId,
         tokens: result.tokens,
-        paidAmount: paymentChannelInfo?.cumulativePayment || 0,
-        remainingAmount: result.remainingTokens,
+        consumedTokens: paymentChannelInfo?.consumedTokens || 0,
+        remainingTokens: result.remainingTokens,
         timestamp: new Date().toISOString(),
         transactionData: result.transactionData ? (result.transactionData as unknown as Record<string, unknown>) : undefined
       };
@@ -359,13 +369,13 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
             
             {paymentChannelInfo && (
               <div className="flex items-center gap-4 text-xs text-green-600 dark:text-green-400">
-                <span>Consumed: {paymentChannelInfo.cumulativePayment.toLocaleString()} Token</span>
-                <span>Remaining: {paymentChannelInfo.remainingBalance.toLocaleString()} Token</span>
+                <span>Consumed: {paymentChannelInfo.consumedTokens.toLocaleString()} Tokens</span>
+                <span>Remaining: {paymentChannelInfo.remainingTokens.toLocaleString()} Tokens</span>
                 <span className={`inline-flex h-2 w-2 rounded-full ${
-                  paymentChannelInfo.remainingBalance < paymentChannelInfo.channelTotalAmount * 0.1 ? 'bg-red-500' : 
-                  paymentChannelInfo.remainingBalance < paymentChannelInfo.channelTotalAmount * 0.3 ? 'bg-yellow-500' : 'bg-green-500'
+                  paymentChannelInfo.remainingTokens < paymentChannelInfo.channelTotalTokens * 0.1 ? 'bg-red-500' : 
+                  paymentChannelInfo.remainingTokens < paymentChannelInfo.channelTotalTokens * 0.3 ? 'bg-yellow-500' : 'bg-green-500'
                 }`} />
-                <span>{Math.max(0, (paymentChannelInfo.remainingBalance / paymentChannelInfo.channelTotalAmount * 100)).toFixed(1)}% remaining</span>
+                <span>{Math.max(0, (paymentChannelInfo.remainingTokens / paymentChannelInfo.channelTotalTokens * 100)).toFixed(1)}% remaining</span>
               </div>
             )}
           </div>
@@ -386,10 +396,10 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
                       {record.tokens} tokens
                     </span>
                     <span className="text-green-600 dark:text-green-400">
-                      Paid: {record.paidAmount.toLocaleString()} CKB
+                      Consumed: {record.consumedTokens.toLocaleString()} Tokens
                     </span>
                     <span className="text-purple-600 dark:text-purple-400">
-                      Remaining: {record.remainingAmount.toLocaleString()} CKB
+                      Remaining: {record.remainingTokens.toLocaleString()} Tokens
                     </span>
                   </div>
                   
@@ -575,18 +585,18 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Amount Paid
+                    Consumed Tokens
                   </label>
                   <p className="text-sm bg-gray-100 dark:bg-gray-700 p-2 rounded">
-                    {selectedRecord.paidAmount.toLocaleString()} CKB
+                    {selectedRecord.consumedTokens.toLocaleString()} Tokens
                   </p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Remaining Balance
+                    Remaining Tokens
                   </label>
                   <p className="text-sm bg-gray-100 dark:bg-gray-700 p-2 rounded">
-                    {selectedRecord.remainingAmount.toLocaleString()} CKB
+                    {selectedRecord.remainingTokens.toLocaleString()} Tokens
                   </p>
                 </div>
                 <div className="col-span-2">
@@ -594,7 +604,16 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
                     Timestamp
                   </label>
                   <p className="text-sm bg-gray-100 dark:bg-gray-700 p-2 rounded">
-                    {new Date(selectedRecord.timestamp).toLocaleString()}
+                    {new Date(selectedRecord.timestamp).toLocaleString('en-US', {
+                      year: 'numeric',
+                      month: '2-digit',
+                      day: '2-digit',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      second: '2-digit',
+                      hour12: false,
+                      timeZone: 'Asia/Shanghai'
+                    })}
                   </p>
                 </div>
               </div>

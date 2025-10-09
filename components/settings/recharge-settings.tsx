@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useUserInfo } from "@/lib/user-info-context";
+import { useAuth } from "@/components/auth/auth-context";
 import { createPaymentChannel, DEVNET_SCRIPTS, jsonStr } from "@/lib/ckb";
 import { ccc } from "@ckb-ccc/core";
 import { executePayNow } from "@/lib/payment-utils";
@@ -35,29 +36,31 @@ interface PaymentChannelData {
 }
 
 export const RechargeSettings: React.FC = () => {
-  const [selectedAmount, setSelectedAmount] = useState<number>(1000); // Default to 1000 CKB
-  const [selectedDuration, setSelectedDuration] = useState<number>(1); // Default to 1 day
+  const [selectedAmount, setSelectedAmount] = useState<number>(100000); // Default to 100000 CKB
+  const [selectedDuration, setSelectedDuration] = useState<number>(86400); // Default to 1 day (86400 seconds)
   const [isCreating, setIsCreating] = useState(false);
   const [paymentData, setPaymentData] = useState<PaymentChannelData | null>(
     null,
   );
   const { userInfo } = useUserInfo();
+  const { user } = useAuth();
 
   const amounts = [
-    { value: 1000, label: "1000 CKB" },
-    { value: 2000, label: "2000 CKB" },
-    { value: 3000, label: "3000 CKB" },
+    { value: 100000, label: "100000 CKB" },
+    { value: 200000, label: "200000 CKB" },
+    { value: 300000, label: "300000 CKB" },
   ];
 
   const durations = [
-    { value: 1, label: "1 day" },
-    { value: 3, label: "3 days" },
-    { value: 7, label: "7 days" },
+    { value: 30, label: "30s" },
+    { value: 86400, label: "1 day" },
+    { value: 259200, label: "3 days" },
+    { value: 604800, label: "7 days" },
   ];
 
-  // Calculate tokens based on pricing: 1000 CKB = 1000 tokens
+  // Calculate tokens based on pricing: 1 CKB = 0.01 Token
   const calculateTokens = (ckbAmount: number) => {
-    return ckbAmount; // 1:1 ratio
+    return ckbAmount * 0.01; // 1 CKB = 0.01 Token
   };
 
   const tokenAmount = calculateTokens(selectedAmount);
@@ -66,10 +69,10 @@ export const RechargeSettings: React.FC = () => {
     try {
       setIsCreating(true);
 
-      // Get seller public key from state management
-      const sellerPublicKey = userInfo.publicKey;
+      // Get seller public key from user auth data (server's public key)
+      const sellerPublicKey = user?.serverPublicKey;
       if (!sellerPublicKey) {
-        alert("Seller public key not available. Please try refreshing.");
+        alert("Server public key not available. Please try refreshing.");
         return;
       }
 
@@ -84,6 +87,7 @@ export const RechargeSettings: React.FC = () => {
 
       console.log("Creating payment channel with:", {
         sellerPublicKey,
+        buyerPublicKey: userInfo.publicKey, // This is the buyer's public key
         amount: selectedAmount,
         duration: selectedDuration,
         tokens: tokenAmount,
@@ -94,7 +98,7 @@ export const RechargeSettings: React.FC = () => {
         sellerPublicKey,
         buyerPrivateKey,
         amount: selectedAmount,
-        day: selectedDuration,
+        seconds: selectedDuration,
       });
 
       // Call the server API to get seller signature
@@ -108,7 +112,7 @@ export const RechargeSettings: React.FC = () => {
             refundTx: result.refundTx,
             fundingTx: result.fundingTx,
             amount: selectedAmount,
-            day: selectedDuration,
+            seconds: selectedDuration,
           }),
         });
 
@@ -276,10 +280,10 @@ export const RechargeSettings: React.FC = () => {
                 </div>
                 <div className="space-y-2">
                   <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
-                    {paymentData.duration}
+                    {paymentData.duration >= 86400 ? `${Math.floor(paymentData.duration / 86400)}` : `${paymentData.duration}s`}
                   </div>
                   <div className="text-sm font-medium tracking-wider text-purple-800 uppercase dark:text-purple-300">
-                    Day{paymentData.duration > 1 ? "s" : ""}
+                    {paymentData.duration >= 86400 ? (Math.floor(paymentData.duration / 86400) > 1 ? "Days" : "Day") : "Seconds"}
                   </div>
                 </div>
               </div>
@@ -415,16 +419,16 @@ export const RechargeSettings: React.FC = () => {
             </div>
             <div className="space-y-2">
               <div className="text-3xl font-bold text-purple-600 dark:text-purple-400">
-                {selectedDuration}
+                {selectedDuration >= 86400 ? Math.floor(selectedDuration / 86400) : `${selectedDuration}s`}
               </div>
               <div className="text-sm font-medium tracking-wider text-purple-800 uppercase dark:text-purple-300">
-                Day{selectedDuration > 1 ? "s" : ""}
+                {selectedDuration >= 86400 ? (Math.floor(selectedDuration / 86400) > 1 ? "Days" : "Day") : "Seconds"}
               </div>
             </div>
           </div>
           <div className="mt-4 text-center">
             <p className="text-sm text-slate-600 dark:text-slate-400">
-              Rate: <span className="font-semibold">1 CKB = 1 Token</span>
+              Rate: <span className="font-semibold">1 CKB = 0.01 Token</span>
             </p>
           </div>
         </div>

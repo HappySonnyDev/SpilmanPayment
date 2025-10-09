@@ -73,16 +73,17 @@ export const derivePublicKeyHashByPublicKeyUint8Array = (
 export const derivePublicKeyHashByPublicKey = (
   publicKey: string,
 ): Uint8Array => {
-  return derivePublicKeyHashByPublicKeyUint8Array(
-    stringToUint8Array(publicKey),
-  );
+  console.log(publicKey, "serverPulic,createPaymentChannel");
+  // Convert hex string to Uint8Array
+  const publicKeyHex = publicKey.startsWith("0x")
+    ? publicKey.slice(2)
+    : publicKey;
+  const publicKeyBytes = new Uint8Array(publicKeyHex.length / 2);
+  for (let i = 0; i < publicKeyBytes.length; i++) {
+    publicKeyBytes[i] = parseInt(publicKeyHex.substr(i * 2, 2), 16);
+  }
+  return derivePublicKeyHashByPublicKeyUint8Array(publicKeyBytes);
 };
-
-function stringToUint8Array(str: string): Uint8Array {
-  // 使用TextEncoder将字符串编码为UTF-8字节数组
-  const encoder = new TextEncoder();
-  return encoder.encode(str);
-}
 
 export const createMultisigScript = (
   buyerPubkeyHash: Uint8Array,
@@ -121,12 +122,12 @@ export const createPaymentChannel = async ({
   sellerPublicKey,
   buyerPrivateKey,
   amount,
-  day,
+  seconds,
 }: {
   sellerPublicKey: string;
   buyerPrivateKey: string;
   amount: number;
-  day: number;
+  seconds: number;
 }) => {
   const client = buildClient("devnet");
   const buyerSigner = new ccc.SignerCkbPrivateKey(client, buyerPrivateKey);
@@ -149,8 +150,9 @@ export const createPaymentChannel = async ({
     ],
     cellDeps,
   });
-  await fundingTx.completeInputsByCapacity(buyerSigner);
+  // await fundingTx.completeInputsByCapacity(buyerSigner);
   await fundingTx.completeFeeBy(buyerSigner, 1400);
+  console.log(jsonStr(fundingTx), "fundingTx===========");
   const fundingTxHash = fundingTx.hash();
   console.log(`📋 Funding transaction hash calculated: ${fundingTxHash}`);
 
@@ -159,8 +161,12 @@ export const createPaymentChannel = async ({
   console.log("📝 Step 2: Creating time-locked refund transaction...");
 
   const currentTime = Math.floor(Date.now() / 1000);
-  const DAYS_IN_SECONDS = day * 24 * 60 * 60;
-  const refundTime = currentTime + DAYS_IN_SECONDS;
+  const DURATION_IN_SECONDS = seconds;
+  const refundTime = currentTime + DURATION_IN_SECONDS;
+  // Create basic refund transaction structure (server will add seller's fee input)
+  // This avoids timing conflicts when buyer's funding transaction goes on-chain
+  const buyerAddress = await buyerSigner.getRecommendedAddressObj();
+  
   const refundTx = ccc.Transaction.from({
     inputs: [
       {
@@ -180,21 +186,24 @@ export const createPaymentChannel = async ({
               0x00,
               0x00,
             ]),
-          ) + BigInt(DAYS_IN_SECONDS),
+          ) + BigInt(DURATION_IN_SECONDS),
       },
     ],
     outputs: [
       {
-        // Refund goes back to buyer's address after timelock
-        lock: (await buyerSigner.getRecommendedAddressObj()).script,
-        capacity: CKB_AMOUNT,
+        // Full refund to buyer's address (server will add fee handling)
+        lock: buyerAddress.script,
+        capacity: CKB_AMOUNT, // Full amount, fees handled by seller
       },
     ],
     cellDeps,
   });
-  console.log("✍️  Step 3: Both parties signing refund transaction...");
+  
+  console.log('✍️  Step 3: Creating basic refund transaction structure...');
+  console.log(`💰 Refund amount: ${CKB_AMOUNT} (full amount, seller pays fees)`);
+  console.log(`🏢 Server will add seller's fee inputs to complete transaction`);
   const refundMessageHash = getMessageHashFromTx(refundTx.hash());
-  console.log(refundTx);
+  console.log(refundTx, "basic refundTx structure", jsonStr(refundTx));
 
   // Return the refund transaction for API processing
   return {
@@ -251,21 +260,23 @@ export const generateCkbSecp256k1Signature = (
 export const generateCkbSecp256k1SignatureWithSince = (
   privateKey: string,
   transactionHash: Uint8Array,
-  sinceValue: bigint
+  sinceValue: bigint,
 ): Uint8Array => {
   // Convert since value to 8-byte array (little endian)
   const sinceBytes = new Uint8Array(8);
   let since = sinceValue;
   for (let i = 0; i < 8; i++) {
-    sinceBytes[i] = Number(since & 0xffn);
-    since = since >> 8n;
+    sinceBytes[i] = Number(since & BigInt(0xff));
+    since = since >> BigInt(8);
   }
-  
+
   // Combine transaction hash and since for signing
-  const combinedMessage = new Uint8Array(transactionHash.length + sinceBytes.length);
+  const combinedMessage = new Uint8Array(
+    transactionHash.length + sinceBytes.length,
+  );
   combinedMessage.set(transactionHash, 0);
   combinedMessage.set(sinceBytes, transactionHash.length);
-  
+
   // Hash the combined message
   const combinedHash = hashCkb(combinedMessage.buffer);
   // Convert hex string to Uint8Array
@@ -274,7 +285,7 @@ export const generateCkbSecp256k1SignatureWithSince = (
   for (let i = 0; i < 32; i++) {
     finalMessageHash[i] = parseInt(hashStr.substr(i * 2, 2), 16);
   }
-  
+
   // Generate signature using the combined hash
   return generateCkbSecp256k1Signature(privateKey, finalMessageHash);
 };
@@ -285,4 +296,16 @@ export const jsonStr = (obj: unknown) => {
     }
     return value;
   });
+};
+
+export const createWitnessData = (
+  buyerSignature: Uint8Array,
+  sellerSignature: Uint8Array,
+): Uint8Array => {
+  const witnessData = new Uint8Array(132);
+  witnessData.set(buyerSignature, 0); // buyer signature at offset 0
+  witnessData.set(sellerSignature, 65); // seller signature at offset 65
+  witnessData[130] = 0; // buyer pubkey index
+  witnessData[131] = 1; // seller pubkey index
+  return witnessData;
 };

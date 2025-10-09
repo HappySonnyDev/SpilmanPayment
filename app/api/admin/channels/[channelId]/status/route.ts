@@ -45,7 +45,10 @@ export async function PATCH(
     }
 
     const statusText = status === PAYMENT_CHANNEL_STATUS.INACTIVE ? 'Inactive' : 
-                      status === PAYMENT_CHANNEL_STATUS.ACTIVE ? 'Active' : 'Invalid';
+                      status === PAYMENT_CHANNEL_STATUS.ACTIVE ? 'Active' : 
+                      status === PAYMENT_CHANNEL_STATUS.INVALID ? 'Invalid' :
+                      status === PAYMENT_CHANNEL_STATUS.SETTLED ? 'Settled' :
+                      status === PAYMENT_CHANNEL_STATUS.EXPIRED ? 'Expired' : 'Unknown';
 
     return NextResponse.json({
       success: true,

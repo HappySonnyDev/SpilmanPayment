@@ -10,10 +10,10 @@ interface PaymentTransactionData {
 interface EnhancedChunkPaymentRequest {
   chunkId: string;
   paymentInfo: {
-    cumulativePayment: number;
-    remainingBalance: number;
+    cumulativePayment: number; // Amount in CKB to pay to seller
+    remainingBalance: number;  // Amount in CKB to return to buyer
     channelId: string;
-    tokens: number;
+    tokens: number; // Number of tokens consumed
   };
   transactionData: PaymentTransactionData;
 }
@@ -75,19 +75,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Store the payment transaction data for later submission
-    // You might want to create a new table for this, for now we'll use a JSON field
-    const paymentRecord = {
-      chunk_id: chunkId,
-      user_id: userId,
-      channel_id: paymentInfo.channelId,
-      cumulative_payment: paymentInfo.cumulativePayment,
-      remaining_balance: paymentInfo.remainingBalance,
-      transaction_data: JSON.stringify(transactionData.transaction),
-      buyer_signature: transactionData.buyerSignature,
-      created_at: new Date().toISOString()
-    };
-
+    // Store the payment transaction data in chunk_payments table
     console.log('💾 Storing payment transaction data:', {
       chunkId,
       channelId: paymentInfo.channelId,
@@ -96,9 +84,26 @@ export async function POST(request: NextRequest) {
       transactionHash: transactionData.transaction.hash || 'N/A'
     });
 
-    // Mark chunk as paid (in this simplified version)
-    // In a real implementation, you might want to mark it as "pending" until the transaction is confirmed
-    chunkRepo.markChunksAsPaid([chunkId], paymentInfo.channelId);
+    // Update chunk payment with transaction data and mark as paid
+    const updatedChunk = chunkRepo.updateChunkPaymentWithTransactionData(
+      chunkId,
+      paymentInfo.channelId,
+      paymentInfo.cumulativePayment,
+      paymentInfo.remainingBalance,
+      transactionData.transaction,
+      transactionData.buyerSignature
+    );
+
+    if (!updatedChunk) {
+      return NextResponse.json(
+        { error: 'Failed to update chunk payment data' },
+        { status: 500 }
+      );
+    }
+
+    // Emit chunkPaymentSuccess event for real-time UI updates
+    // This ensures the frontend updates payment records immediately
+    console.log('🚀 Emitting chunkPaymentSuccess event for chunk:', chunkId);
 
     // Note: consumed_tokens is updated during chat streaming, not during payment
     // Payment status is tracked separately from consumption
@@ -113,7 +118,11 @@ export async function POST(request: NextRequest) {
         cumulativePayment: paymentInfo.cumulativePayment,
         remainingBalance: paymentInfo.remainingBalance,
         remainingTokens: paymentInfo.remainingBalance, // For consistency with other payment endpoints
-        transactionStored: true
+        transactionStored: true,
+        transactionData: {
+          transaction: transactionData.transaction,
+          buyerSignature: transactionData.buyerSignature
+        }
       }
     });
 

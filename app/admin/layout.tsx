@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Users, CreditCard, LayoutDashboard, ChevronLeft, Menu } from "lucide-react";
+import { Users, CreditCard, LayoutDashboard, ChevronLeft, Menu, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -21,6 +21,11 @@ const navigation = [
     name: "Payment Channels",
     href: "/admin/channels",
     icon: CreditCard,
+  },
+  {
+    name: "Scheduled Tasks",
+    href: "/admin/tasks",
+    icon: Clock,
   },
 ];
 
@@ -151,6 +156,16 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                     </h2>
                     <p className="text-sm text-gray-600 dark:text-gray-400">
                       Monitor and manage payment channels
+                    </p>
+                  </>
+                )}
+                {pathname === "/admin/tasks" && (
+                  <>
+                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                      Scheduled Tasks
+                    </h2>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Manage automated tasks and cron jobs
                     </p>
                   </>
                 )}

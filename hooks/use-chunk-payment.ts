@@ -18,10 +18,10 @@ interface PaymentChannelInfo {
 }
 
 interface ChunkPaymentInfo {
-  cumulativePayment: number;
-  remainingBalance: number;
+  cumulativePayment: number; // Amount in CKB to pay to seller
+  remainingBalance: number;  // Amount in CKB to return to buyer
   channelId: string;
-  tokens: number;
+  tokens: number; // Number of tokens consumed
 }
 
 export function useChunkPayment() {

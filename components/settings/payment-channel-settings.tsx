@@ -15,8 +15,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useUserInfo } from "@/lib/user-info-context";
-import { ccc } from "@ckb-ccc/core";
-import { DEVNET_SCRIPTS } from "@/lib/ckb";
+import { ccc, hexFrom, WitnessArgs } from "@ckb-ccc/core";
+import { DEVNET_SCRIPTS, buildClient, generateCkbSecp256k1Signature, generateCkbSecp256k1SignatureWithSince, createWitnessData, getMessageHashFromTx } from "@/lib/ckb";
 import { executePayNow } from "@/lib/payment-utils";
 import { ChevronDown } from "lucide-react";
 
@@ -26,11 +26,13 @@ interface PaymentChannel {
   channelId: string;
   amount: number;
   durationDays: number;
+  durationSeconds?: number; // Add optional seconds field
   status: number;
   statusText: string;
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
+  verifiedAt?: string; // Add verifiedAt field
   // Raw database fields for data extraction
   sellerSignature: string | null;
   refundTxData: string | null;
@@ -172,37 +174,43 @@ export const PaymentChannelSettings: React.FC = () => {
     }
   };
 
-  const handleChannelAction = async (channelId: string, action: 'activate' | 'close') => {
+  const handleChannelAction = async (channelId: string, action: 'activate' | 'settle') => {
     try {
-
-    //   setActionLoading(channelId);
+      setActionLoading(channelId);
       
-    //   const response = await fetch('/api/channel/update', {
-    //     method: 'POST',
-    //     headers: {
-    //       'Content-Type': 'application/json',
-    //     },
-    //     body: JSON.stringify({
-    //       channelId,
-    //       action,
-    //     }),
-    //   });
+      if (action === 'settle') {
+        // Call the settlement API
+        const response = await fetch('/api/channel/settle', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            channelId,
+          }),
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to settle channel');
+        }
+        
+        const result = await response.json();
+        alert(
+          `Channel settled successfully!\n` +
+          `Transaction Hash: ${result.txHash}\n` +
+          `Channel Status: ${result.channelStatus}`
+        );
+        
+        // Refresh the channels list
+        await fetchPaymentChannels();
+      }
       
-    //   if (!response.ok) {
-    //     const errorData = await response.json();
-    //     throw new Error(errorData.error || `Failed to ${action} channel`);
-    //   }
-      
-    //   const result = await response.json();
-    //   alert(`Channel ${action}d successfully!`);
-      
-    //   // Refresh the channels list
-    //   await fetchPaymentChannels();
     } catch (error) {
-    //   console.error(`Error ${action}ing channel:`, error);
-    //   alert(`Failed to ${action} channel: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error(`Error ${action}ing channel:`, error);
+      alert(`Failed to ${action} channel: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
-    //   setActionLoading(null);
+      setActionLoading(null);
     }
   };
 
@@ -238,6 +246,130 @@ export const PaymentChannelSettings: React.FC = () => {
     }
   };
 
+  const handleWithdrawDeposit = async (channel: PaymentChannel) => {
+    try {
+      setActionLoading(channel.channelId);
+      
+      // Check if refund transaction data and seller signature exist
+      if (!channel.refundTxData || !channel.sellerSignature) {
+        alert("No refund transaction data or seller signature available for this channel.");
+        return;
+      }
+
+      // Get buyer private key from localStorage
+      const buyerPrivateKey = localStorage.getItem("private_key");
+      if (!buyerPrivateKey) {
+        alert("Please connect your CKB wallet first in Payment Channel settings.");
+        return;
+      }
+
+      // Parse the refund transaction (already includes fees from creation time)
+      const refundTxData = JSON.parse(channel.refundTxData);
+      const refundTx = ccc.Transaction.from(refundTxData);
+      
+      console.log('Using pre-calculated refund transaction:', refundTx);
+      
+      // Get transaction hash for signing
+      const transactionHash = refundTx.hash();
+      
+      // Generate message hash from completed refund transaction
+      const messageHash = getMessageHashFromTx(transactionHash);
+      
+      // Generate buyer signature with timelock (since this is a refund transaction)
+      // Use the same duration that was used during channel creation
+      const durationInSeconds = channel.durationSeconds || (channel.durationDays * 24 * 60 * 60);
+      
+      const sinceValue = ccc.numFromBytes(
+        new Uint8Array([
+          0x80,
+          0x00,
+          0x00,
+          0x00, // Relative time lock flag
+          0x00,
+          0x00,
+          0x00,
+          0x00,
+        ]),
+      ) + BigInt(durationInSeconds);
+      
+      console.log(`Generating buyer signature with since value: ${sinceValue}`);
+      console.log(`Duration in seconds: ${durationInSeconds}`);
+      
+      const buyerSignatureBytes = generateCkbSecp256k1SignatureWithSince(
+        buyerPrivateKey,
+        messageHash,
+        sinceValue,
+      );
+      
+      // Convert seller signature from hex to bytes
+      const sellerSignatureHex = channel.sellerSignature.startsWith('0x') 
+        ? channel.sellerSignature.slice(2) 
+        : channel.sellerSignature;
+      
+      if (sellerSignatureHex.length !== 130) {
+        throw new Error(`Invalid seller signature length: ${sellerSignatureHex.length}, expected 130`);
+      }
+      
+      const sellerSignatureBytes = new Uint8Array(
+        sellerSignatureHex.match(/.{2}/g)!.map((byte) => parseInt(byte, 16))
+      );
+      
+      // Validate signature lengths
+      if (buyerSignatureBytes.length !== 65) {
+        throw new Error(`Invalid buyer signature length: ${buyerSignatureBytes.length}, expected 65`);
+      }
+      if (sellerSignatureBytes.length !== 65) {
+        throw new Error(`Invalid seller signature length: ${sellerSignatureBytes.length}, expected 65`);
+      }
+
+      // Create witness data with both signatures (buyer first, seller second)
+      const witnessData = createWitnessData(
+        buyerSignatureBytes,
+        sellerSignatureBytes,
+      );
+
+      // Update the transaction witnesses
+      const witnessArgs = new WitnessArgs(hexFrom(witnessData));
+      refundTx.witnesses[0] = hexFrom(witnessArgs.toBytes());
+      
+      // Submit the transaction to CKB network
+      const client = buildClient("devnet");
+      console.log('Submitting refund transaction with multi-sig:', refundTx);
+      
+      const txHash = await client.sendTransaction(refundTx);
+      
+      alert(
+        `Deposit withdrawn successfully!\n` +
+        `Transaction Hash: ${txHash}\n` +
+        `You can check the transaction status on CKB Explorer.`
+      );
+      
+      // Refresh the channels list
+      await fetchPaymentChannels();
+      
+    } catch (error) {
+      console.error('Deposit withdrawal error:', error);
+      
+      // Provide more specific error messages
+      let errorMessage = 'Failed to withdraw deposit: ';
+      if (error instanceof Error) {
+        if (error.message.includes('time')) {
+          errorMessage += 'Channel timelock may not have expired yet. Please wait for the timelock period to complete.';
+        } else if (error.message.includes('signature')) {
+          errorMessage += 'Signature validation failed. Please check your private key and seller signature.';
+        } else {
+          errorMessage += error.message;
+        }
+      } else {
+        errorMessage += 'Unknown error';
+      }
+      
+      alert(errorMessage);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const getStatusBadge = (status: number, statusText: string) => {
     const baseClasses = "inline-flex rounded-full px-3 py-1 text-xs font-medium";
     
@@ -260,6 +392,18 @@ export const PaymentChannelSettings: React.FC = () => {
             {statusText}
           </span>
         );
+      case 4: // Settled
+        return (
+          <span className={`${baseClasses} bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400`}>
+            {statusText}
+          </span>
+        );
+      case 5: // Expired
+        return (
+          <span className={`${baseClasses} bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400`}>
+            {statusText}
+          </span>
+        );
       default:
         return (
           <span className={`${baseClasses} bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400`}>
@@ -270,9 +414,30 @@ export const PaymentChannelSettings: React.FC = () => {
   };
 
   // Helper function to calculate period range
-  const getPeriodRange = (createdAt: string, durationDays: number) => {
-    const startDate = new Date(createdAt);
-    const endDate = new Date(startDate.getTime() + (durationDays * 24 * 60 * 60 * 1000));
+  const formatDuration = (durationDays: number, durationSeconds?: number) => {
+    // If we have duration in seconds, use that; otherwise fall back to days
+    if (durationSeconds !== undefined && durationSeconds !== null) {
+      if (durationSeconds < 60) {
+        return `${durationSeconds}s`;
+      } else if (durationSeconds < 3600) {
+        return `${Math.floor(durationSeconds / 60)}m`;
+      } else if (durationSeconds < 86400) {
+        return `${Math.floor(durationSeconds / 3600)}h`;
+      } else {
+        const days = Math.floor(durationSeconds / 86400);
+        return `${days} day${days > 1 ? 's' : ''}`;
+      }
+    }
+    // Fallback to days format
+    return `${durationDays} day${durationDays > 1 ? 's' : ''}`;
+  };
+
+  const getPeriodRange = (createdAt: string, verifiedAt: string | undefined, durationDays: number, durationSeconds?: number) => {
+    // Use verifiedAt for active channels, createdAt for inactive channels
+    const startDate = new Date(verifiedAt && verifiedAt !== null ? verifiedAt : createdAt);
+    // Use duration in seconds if available, otherwise convert days to seconds
+    const durationInSeconds = durationSeconds || (durationDays * 24 * 60 * 60);
+    const endDate = new Date(startDate.getTime() + (durationInSeconds * 1000));
     
     const formatDateTime = (date: Date) => {
       return date.toLocaleString('en-US', {
@@ -329,16 +494,27 @@ export const PaymentChannelSettings: React.FC = () => {
               {channel.isDefault ? '✓ Already Default' : 'Set as Default'}
             </DropdownMenuItem>
             <DropdownMenuItem
-              onClick={() => handleChannelAction(channel.channelId, 'close')}
+              onClick={() => handleChannelAction(channel.channelId, 'settle')}
               disabled={isLoading}
               className="text-red-600 focus:text-red-600"
             >
-              Close Channel
+              Settle Channel
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       );
-    } else { // Invalid
+    } else if (channel.status === 5) { // Expired - Show Withdraw Deposit
+      return (
+        <Button
+          onClick={() => handleWithdrawDeposit(channel)}
+          disabled={isLoading}
+          className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 text-sm"
+          size="sm"
+        >
+          {isLoading ? 'Processing...' : 'Withdraw Deposit'}
+        </Button>
+      );
+    } else { // Invalid or Settled - No actions available
       return (
         <span className="text-sm text-gray-500 dark:text-gray-400">
           {/* No actions available */}
@@ -397,7 +573,7 @@ export const PaymentChannelSettings: React.FC = () => {
                       {channel.amount.toLocaleString()} CKB
                     </div>
                     <div className="text-xs text-slate-600 dark:text-slate-400">
-                      {getPeriodRange(channel.createdAt, channel.durationDays)}
+                      {getPeriodRange(channel.createdAt, channel.verifiedAt, channel.durationDays, channel.durationSeconds)}
                     </div>
                     <div>
                       {getStatusBadge(channel.status, channel.statusText)}
@@ -443,7 +619,7 @@ export const PaymentChannelSettings: React.FC = () => {
                             Tokens
                           </label>
                           <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg font-mono text-xs text-slate-700 dark:text-slate-300">
-                            {channel.amount.toLocaleString()}
+                            {(channel.amount * 0.01).toLocaleString()}
                           </div>
                         </div>
                         <div>
@@ -478,7 +654,7 @@ export const PaymentChannelSettings: React.FC = () => {
                             Period
                           </label>
                           <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg font-mono text-xs text-slate-700 dark:text-slate-300">
-                            {getPeriodRange(channel.createdAt, channel.durationDays)}
+                            {getPeriodRange(channel.createdAt, channel.verifiedAt, channel.durationDays, channel.durationSeconds)}
                           </div>
                         </div>
                         <div>

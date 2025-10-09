@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
     // Get public key and seller address
     const publicKey = user.public_key || authService.getPublicKey();
     const sellerAddress = await authService.getSellerAddress();
+    const serverPublicKey = authService.getPublicKey();
     
     // Get user's active payment channel
     const activeChannel = authService.getActivePaymentChannel(user.id);
@@ -49,6 +50,7 @@ export async function POST(request: NextRequest) {
       is_active: Boolean(user.is_active), // Ensure boolean conversion from SQLite integer
       public_key: publicKey,
       seller_address: sellerAddress,
+      serverPublicKey,
       active_channel: activeChannel ? {
         channelId: activeChannel.channel_id,
         txHash: activeChannel.tx_hash,

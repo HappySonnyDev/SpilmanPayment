@@ -202,7 +202,7 @@ export async function POST(request: NextRequest) {
         statusText: getStatusText(updatedChannel.status),
         isDefault: isNewDefault,
         txHash: txHash,
-        verifiedAt: new Date().toISOString(),
+        verifiedAt: updatedChannel.verified_at, // Use the actual database value
       }
     });
 

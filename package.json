@@ -9,7 +9,10 @@
     "lint": "next lint",
     "prettier": "prettier --check .",
     "prettier:fix": "prettier --write .",
-    "clear-channels": "node scripts/clear-payment-channels.js"
+    "clear-channels": "node scripts/clear-payment-channels.js",
+    "clear-tables": "node scripts/clear-database-tables.js",
+    "cron-auto-settle": "node scripts/cron-auto-settle.js",
+    "cron-scheduler": "node scripts/cron-scheduler.js"
   },
   "prettier": {
     "plugins": [
@@ -33,6 +36,7 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@types/bcryptjs": "^3.0.0",
     "@types/jsonwebtoken": "^9.0.10",
+    "@types/node-cron": "^3.0.11",
     "ai": "^5.0.39",
     "bcryptjs": "^3.0.2",
     "better-sqlite3": "^12.4.1",
@@ -46,6 +50,7 @@
     "lucide-react": "^0.543.0",
     "motion": "^12.23.12",
     "next": "15.5.2",
+    "node-cron": "^4.2.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-shiki": "^0.8.0",

@@ -21,7 +21,7 @@ export function getDatabase() {
 }
 
 // Database version for migrations
-const DATABASE_VERSION = 9; // Update to version 9 for nullable email/password fields
+const DATABASE_VERSION = 14; // Update to version 14 for verified_at column
 
 // Initialize database tables
 function initializeDatabase() {
@@ -131,6 +131,21 @@ function runMigrations() {
   }
   if (currentVersion < 9) {
     migrateToVersion9();
+  }
+  if (currentVersion < 10) {
+    migrateToVersion10();
+  }
+  if (currentVersion < 11) {
+    migrateToVersion11();
+  }
+  if (currentVersion < 12) {
+    migrateToVersion12();
+  }
+  if (currentVersion < 13) {
+    migrateToVersion13();
+  }
+  if (currentVersion < 14) {
+    migrateToVersion14();
   }
 
   // Update database version
@@ -453,6 +468,194 @@ function migrateToVersion9() {
   }
 }
 
+// Migration to version 10: Add payment transaction fields to chunk_payments table
+function migrateToVersion10() {
+  console.log('Running migration to version 10: adding payment transaction fields to chunk_payments');
+  
+  try {
+    // Check if the new columns already exist
+    const pragmaStmt = db.prepare('PRAGMA table_info(chunk_payments)');
+    const columns = pragmaStmt.all() as Array<{ name: string }>;
+    const hasTransactionFields = columns.some(col => col.name === 'cumulative_payment');
+    
+    if (!hasTransactionFields) {
+      // Begin transaction
+      db.exec('BEGIN TRANSACTION');
+      
+      // Add new columns for payment transaction data
+      db.exec('ALTER TABLE chunk_payments ADD COLUMN cumulative_payment INTEGER');
+      db.exec('ALTER TABLE chunk_payments ADD COLUMN remaining_balance INTEGER');
+      db.exec('ALTER TABLE chunk_payments ADD COLUMN transaction_data TEXT');
+      db.exec('ALTER TABLE chunk_payments ADD COLUMN buyer_signature TEXT');
+      
+      // Commit transaction
+      db.exec('COMMIT');
+      
+      console.log('Successfully added payment transaction fields to chunk_payments');
+    } else {
+      console.log('Payment transaction fields already exist, skipping migration');
+    }
+  } catch (error) {
+    console.error('Error during migration to version 10:', error);
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+// Migration to version 11: Add settle_hash column to payment_channels table
+function migrateToVersion11() {
+  console.log('Running migration to version 11: adding settle_hash column to payment_channels');
+  
+  try {
+    // Check if settle_hash column already exists
+    const pragmaStmt = db.prepare('PRAGMA table_info(payment_channels)');
+    const columns = pragmaStmt.all() as Array<{ name: string }>;
+    const hasSettleHashColumn = columns.some(col => col.name === 'settle_hash');
+    
+    if (!hasSettleHashColumn) {
+      // Begin transaction
+      db.exec('BEGIN TRANSACTION');
+      
+      // Add settle_hash column
+      db.exec('ALTER TABLE payment_channels ADD COLUMN settle_hash TEXT');
+      
+      // Create index for settle_hash
+      db.exec('CREATE INDEX IF NOT EXISTS idx_payment_channels_settle_hash ON payment_channels (settle_hash)');
+      
+      // Commit transaction
+      db.exec('COMMIT');
+      
+      console.log('Successfully added settle_hash column');
+    } else {
+      console.log('Settle_hash column already exists, skipping migration');
+    }
+  } catch (error) {
+    console.error('Error during migration to version 11:', error);
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+// Migration to version 12: Create scheduled_task_logs table
+function migrateToVersion12() {
+  console.log('Running migration to version 12: creating scheduled_task_logs table');
+  
+  try {
+    // Begin transaction
+    db.exec('BEGIN TRANSACTION');
+    
+    // Create scheduled_task_logs table
+    const createScheduledTaskLogsTable = `
+      CREATE TABLE IF NOT EXISTS scheduled_task_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_name TEXT NOT NULL,
+        task_type TEXT NOT NULL,
+        execution_status TEXT NOT NULL,
+        started_at DATETIME NOT NULL,
+        completed_at DATETIME,
+        duration_ms INTEGER,
+        result_data TEXT,
+        error_message TEXT,
+        settled_count INTEGER DEFAULT 0,
+        checked_count INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+    
+    db.exec(createScheduledTaskLogsTable);
+    
+    // Create indexes for performance
+    db.exec('CREATE INDEX IF NOT EXISTS idx_scheduled_task_logs_task_name ON scheduled_task_logs (task_name)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_scheduled_task_logs_task_type ON scheduled_task_logs (task_type)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_scheduled_task_logs_status ON scheduled_task_logs (execution_status)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_scheduled_task_logs_started_at ON scheduled_task_logs (started_at)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_scheduled_task_logs_created_at ON scheduled_task_logs (created_at)');
+    
+    // Commit transaction
+    db.exec('COMMIT');
+    
+    console.log('Successfully created scheduled_task_logs table');
+  } catch (error) {
+    console.error('Error during migration to version 12:', error);
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+// Migration to version 13: Add duration_seconds column to payment_channels
+function migrateToVersion13() {
+  console.log('Running migration to version 13: adding duration_seconds column to payment_channels');
+  
+  try {
+    // Check if duration_seconds column already exists
+    const pragmaStmt = db.prepare('PRAGMA table_info(payment_channels)');
+    const columns = pragmaStmt.all() as Array<{ name: string }>;
+    const hasDurationSecondsColumn = columns.some(col => col.name === 'duration_seconds');
+    
+    if (!hasDurationSecondsColumn) {
+      // Begin transaction
+      db.exec('BEGIN TRANSACTION');
+      
+      // Add duration_seconds column
+      db.exec('ALTER TABLE payment_channels ADD COLUMN duration_seconds INTEGER');
+      
+      // Migrate existing data: convert duration_days to duration_seconds
+      db.exec('UPDATE payment_channels SET duration_seconds = duration_days * 24 * 60 * 60 WHERE duration_seconds IS NULL');
+      
+      // Create index for duration_seconds
+      db.exec('CREATE INDEX IF NOT EXISTS idx_payment_channels_duration_seconds ON payment_channels (duration_seconds)');
+      
+      // Commit transaction
+      db.exec('COMMIT');
+      
+      console.log('Successfully added duration_seconds column and migrated data');
+    } else {
+      console.log('Duration_seconds column already exists, skipping migration');
+    }
+  } catch (error) {
+    console.error('Error during migration to version 13:', error);
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+// Migration to version 14: Add verified_at column to payment_channels
+function migrateToVersion14() {
+  console.log('Running migration to version 14: adding verified_at column to payment_channels');
+  
+  try {
+    // Check if verified_at column already exists
+    const pragmaStmt = db.prepare('PRAGMA table_info(payment_channels)');
+    const columns = pragmaStmt.all() as Array<{ name: string }>;
+    const hasVerifiedAtColumn = columns.some(col => col.name === 'verified_at');
+    
+    if (!hasVerifiedAtColumn) {
+      // Begin transaction
+      db.exec('BEGIN TRANSACTION');
+      
+      // Add verified_at column
+      db.exec('ALTER TABLE payment_channels ADD COLUMN verified_at DATETIME');
+      
+      // For existing active channels, set verified_at to created_at as a reasonable default
+      db.exec(`UPDATE payment_channels SET verified_at = created_at WHERE status = ${PAYMENT_CHANNEL_STATUS.ACTIVE}`);
+      
+      // Create index for verified_at
+      db.exec('CREATE INDEX IF NOT EXISTS idx_payment_channels_verified_at ON payment_channels (verified_at)');
+      
+      // Commit transaction
+      db.exec('COMMIT');
+      
+      console.log('Successfully added verified_at column and updated existing data');
+    } else {
+      console.log('Verified_at column already exists, skipping migration');
+    }
+  } catch (error) {
+    console.error('Error during migration to version 14:', error);
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 // User interface
 export interface User {
   id: number;
@@ -653,6 +856,8 @@ export const PAYMENT_CHANNEL_STATUS = {
   INACTIVE: 1,    // 未激活
   ACTIVE: 2,      // 已激活  
   INVALID: 3,     // 已作废
+  SETTLED: 4,     // 已结算
+  EXPIRED: 5,     // 已过期
 } as const;
 
 export type PaymentChannelStatus = typeof PAYMENT_CHANNEL_STATUS[keyof typeof PAYMENT_CHANNEL_STATUS];
@@ -664,11 +869,14 @@ export interface PaymentChannel {
   channel_id: string;
   amount: number;
   duration_days: number;
+  duration_seconds: number; // New field for duration in seconds
   status: PaymentChannelStatus;
   seller_signature: string | null;
   refund_tx_data: string | null;
   funding_tx_data: string | null;
   tx_hash: string | null; // Transaction hash after confirmation
+  settle_hash: string | null; // Settlement transaction hash
+  verified_at: string | null; // When channel becomes active (funding confirmed)
   is_default: number; // SQLite stores boolean as integer (0 or 1)
   consumed_tokens: number; // Number of tokens consumed
   created_at: string;
@@ -684,6 +892,10 @@ export interface ChunkPayment {
   channel_id: string | null;
   tokens_count: number;
   is_paid: number; // SQLite stores boolean as integer (0 or 1)
+  cumulative_payment: number | null; // Payment amount in CKB accumulated
+  remaining_balance: number | null; // Remaining balance in CKB in channel
+  transaction_data: string | null; // JSON string of transaction data
+  buyer_signature: string | null; // Buyer signature for the transaction
   created_at: string;
   paid_at: string | null;
 }
@@ -698,12 +910,43 @@ export interface CreateChunkPaymentData {
   is_paid?: boolean; // API accepts boolean, will be converted to integer internally
 }
 
+// Scheduled Task Log interface
+export interface ScheduledTaskLog {
+  id: number;
+  task_name: string;
+  task_type: string;
+  execution_status: string;
+  started_at: string;
+  completed_at: string | null;
+  duration_ms: number | null;
+  result_data: string | null;
+  error_message: string | null;
+  settled_count: number;
+  checked_count: number;
+  created_at: string;
+}
+
+// Scheduled Task Log creation interface
+export interface CreateScheduledTaskLogData {
+  task_name: string;
+  task_type: string;
+  execution_status: string;
+  started_at: string;
+  completed_at?: string;
+  duration_ms?: number;
+  result_data?: string;
+  error_message?: string;
+  settled_count?: number;
+  checked_count?: number;
+}
+
 // Payment Channel creation interface
 export interface CreatePaymentChannelData {
   user_id: number;
   channel_id: string;
   amount: number;
   duration_days: number;
+  duration_seconds?: number; // Optional seconds field
   status?: PaymentChannelStatus;
   seller_signature?: string;
   refund_tx_data?: string;
@@ -721,18 +964,19 @@ export class PaymentChannelRepository {
   }
 
   createPaymentChannel(channelData: CreatePaymentChannelData): PaymentChannel {
-    const { user_id, channel_id, amount, duration_days, status, seller_signature, refund_tx_data, funding_tx_data, is_default, consumed_tokens } = channelData;
+    const { user_id, channel_id, amount, duration_days, duration_seconds, status, seller_signature, refund_tx_data, funding_tx_data, is_default, consumed_tokens } = channelData;
     
     const stmt = this.db.prepare(`
-      INSERT INTO payment_channels (user_id, channel_id, amount, duration_days, status, seller_signature, refund_tx_data, funding_tx_data, is_default, consumed_tokens)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO payment_channels (user_id, channel_id, amount, duration_days, duration_seconds, status, seller_signature, refund_tx_data, funding_tx_data, is_default, consumed_tokens)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     try {
       const channelStatus = status || PAYMENT_CHANNEL_STATUS.INACTIVE; // Default to inactive
       const defaultFlag = is_default ? 1 : 0; // Convert boolean to integer for SQLite
       const consumedTokens = consumed_tokens || 0; // Default to 0 consumed tokens
-      const result = stmt.run(user_id, channel_id, amount, duration_days, channelStatus, seller_signature || null, refund_tx_data || null, funding_tx_data || null, defaultFlag, consumedTokens);
+      const durationInSeconds = duration_seconds || (duration_days * 24 * 60 * 60); // Calculate seconds if not provided
+      const result = stmt.run(user_id, channel_id, amount, duration_days, durationInSeconds, channelStatus, seller_signature || null, refund_tx_data || null, funding_tx_data || null, defaultFlag, consumedTokens);
       return this.getPaymentChannelById(result.lastInsertRowid as number)!;
     } catch (error: unknown) {
       if (error instanceof Error && 'code' in error && error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
@@ -779,6 +1023,17 @@ export class PaymentChannelRepository {
     return this.getPaymentChannelByChannelId(channelId);
   }
 
+  updatePaymentChannelSettleHash(channelId: string, settleHash: string): PaymentChannel | null {
+    const stmt = this.db.prepare(`
+      UPDATE payment_channels 
+      SET settle_hash = ?, updated_at = CURRENT_TIMESTAMP 
+      WHERE channel_id = ?
+    `);
+    
+    stmt.run(settleHash, channelId);
+    return this.getPaymentChannelByChannelId(channelId);
+  }
+
   updatePaymentChannelStatus(channelId: string, status: PaymentChannelStatus): PaymentChannel | null {
     const stmt = this.db.prepare(`
       UPDATE payment_channels 
@@ -791,7 +1046,15 @@ export class PaymentChannelRepository {
   }
 
   activatePaymentChannel(channelId: string): PaymentChannel | null {
-    return this.updatePaymentChannelStatus(channelId, PAYMENT_CHANNEL_STATUS.ACTIVE);
+    // Set both status to ACTIVE and verified_at to current timestamp
+    const stmt = this.db.prepare(`
+      UPDATE payment_channels 
+      SET status = ?, verified_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP 
+      WHERE channel_id = ?
+    `);
+    
+    stmt.run(PAYMENT_CHANNEL_STATUS.ACTIVE, channelId);
+    return this.getPaymentChannelByChannelId(channelId);
   }
 
   invalidatePaymentChannel(channelId: string): PaymentChannel | null {
@@ -864,6 +1127,48 @@ export class PaymentChannelRepository {
     stmt.run(status, channelId);
     return this.getPaymentChannelById(channelId);
   }
+
+  // Method to get expired active channels using verified_at and duration_seconds
+  getExpiredActiveChannels(): PaymentChannel[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM payment_channels 
+      WHERE status = ? 
+      AND verified_at IS NOT NULL
+      AND (
+        (duration_seconds IS NOT NULL AND datetime(verified_at, '+' || duration_seconds || ' seconds') < datetime('now'))
+        OR (duration_seconds IS NULL AND datetime(verified_at, '+' || duration_days || ' days') < datetime('now'))
+      )
+      ORDER BY verified_at ASC
+    `);
+    return stmt.all(PAYMENT_CHANNEL_STATUS.ACTIVE) as PaymentChannel[];
+  }
+
+  // Method to expire a channel by channel_id
+  expirePaymentChannel(channelId: string): PaymentChannel | null {
+    return this.updatePaymentChannelStatus(channelId, PAYMENT_CHANNEL_STATUS.EXPIRED);
+  }
+
+  // Batch method to expire multiple channels
+  expirePaymentChannels(channelIds: string[]): number {
+    const transaction = this.db.transaction(() => {
+      const stmt = this.db.prepare(`
+        UPDATE payment_channels 
+        SET status = ?, updated_at = CURRENT_TIMESTAMP 
+        WHERE channel_id = ?
+      `);
+      
+      let expiredCount = 0;
+      for (const channelId of channelIds) {
+        const result = stmt.run(PAYMENT_CHANNEL_STATUS.EXPIRED, channelId);
+        if (result.changes > 0) {
+          expiredCount++;
+        }
+      }
+      return expiredCount;
+    });
+    
+    return transaction();
+  }
 }
 
 // Chunk Payment database operations
@@ -930,6 +1235,39 @@ export class ChunkPaymentRepository {
     transaction();
   }
 
+  // Update chunk payment with transaction data from pay-enhanced
+  updateChunkPaymentWithTransactionData(
+    chunkId: string, 
+    channelId: string, 
+    cumulativePayment: number, 
+    remainingBalance: number, 
+    transactionData: Record<string, unknown>, 
+    buyerSignature: string
+  ): ChunkPayment | null {
+    const stmt = this.db.prepare(`
+      UPDATE chunk_payments 
+      SET is_paid = 1, 
+          paid_at = CURRENT_TIMESTAMP, 
+          channel_id = ?,
+          cumulative_payment = ?,
+          remaining_balance = ?,
+          transaction_data = ?,
+          buyer_signature = ?
+      WHERE chunk_id = ?
+    `);
+    
+    stmt.run(
+      channelId, 
+      cumulativePayment, 
+      remainingBalance, 
+      JSON.stringify(transactionData), 
+      buyerSignature, 
+      chunkId
+    );
+    
+    return this.getChunkPaymentByChunkId(chunkId);
+  }
+
   getUnpaidTokensCount(userId: number, sessionId: string): number {
     const stmt = this.db.prepare('SELECT SUM(tokens_count) as total FROM chunk_payments WHERE user_id = ? AND session_id = ? AND is_paid = 0');
     const result = stmt.get(userId, sessionId) as { total: number | null };
@@ -968,5 +1306,202 @@ export class ChunkPaymentRepository {
     const stmt = this.db.prepare('SELECT session_id FROM chunk_payments WHERE user_id = ? ORDER BY created_at DESC LIMIT 1');
     const result = stmt.get(userId) as { session_id: string } | null;
     return result?.session_id || null;
+  }
+}
+
+// Scheduled Task Log database operations
+export class ScheduledTaskLogRepository {
+  private db: Database.Database;
+
+  constructor() {
+    this.db = getDatabase();
+  }
+
+  createTaskLog(logData: CreateScheduledTaskLogData): ScheduledTaskLog {
+    const { 
+      task_name, 
+      task_type, 
+      execution_status, 
+      started_at, 
+      completed_at, 
+      duration_ms, 
+      result_data, 
+      error_message, 
+      settled_count, 
+      checked_count 
+    } = logData;
+    
+    const stmt = this.db.prepare(`
+      INSERT INTO scheduled_task_logs (
+        task_name, task_type, execution_status, started_at, completed_at, 
+        duration_ms, result_data, error_message, settled_count, checked_count
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    try {
+      const result = stmt.run(
+        task_name,
+        task_type,
+        execution_status,
+        started_at,
+        completed_at || null,
+        duration_ms || null,
+        result_data || null,
+        error_message || null,
+        settled_count || 0,
+        checked_count || 0
+      );
+      return this.getTaskLogById(result.lastInsertRowid as number)!;
+    } catch (error) {
+      console.error('Error creating task log:', error);
+      throw error;
+    }
+  }
+
+  getTaskLogById(id: number): ScheduledTaskLog | null {
+    const stmt = this.db.prepare('SELECT * FROM scheduled_task_logs WHERE id = ?');
+    return stmt.get(id) as ScheduledTaskLog | null;
+  }
+
+  getTaskLogsByName(taskName: string, limit: number = 100): ScheduledTaskLog[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM scheduled_task_logs 
+      WHERE task_name = ? 
+      ORDER BY started_at DESC 
+      LIMIT ?
+    `);
+    return stmt.all(taskName, limit) as ScheduledTaskLog[];
+  }
+
+  getTaskLogsByNamePaginated(taskName: string, page: number = 1, pageSize: number = 20): {
+    logs: ScheduledTaskLog[];
+    total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+  } {
+    const offset = (page - 1) * pageSize;
+    
+    // Get total count
+    const countStmt = this.db.prepare(`
+      SELECT COUNT(*) as count FROM scheduled_task_logs 
+      WHERE task_name = ?
+    `);
+    const { count: total } = countStmt.get(taskName) as { count: number };
+    
+    // Get paginated logs
+    const stmt = this.db.prepare(`
+      SELECT * FROM scheduled_task_logs 
+      WHERE task_name = ? 
+      ORDER BY started_at DESC 
+      LIMIT ? OFFSET ?
+    `);
+    const logs = stmt.all(taskName, pageSize, offset) as ScheduledTaskLog[];
+    
+    return {
+      logs,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize)
+    };
+  }
+
+  getTaskLogsByType(taskType: string, limit: number = 100): ScheduledTaskLog[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM scheduled_task_logs 
+      WHERE task_type = ? 
+      ORDER BY started_at DESC 
+      LIMIT ?
+    `);
+    return stmt.all(taskType, limit) as ScheduledTaskLog[];
+  }
+
+  getTaskLogsByStatus(status: string, limit: number = 100): ScheduledTaskLog[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM scheduled_task_logs 
+      WHERE execution_status = ? 
+      ORDER BY started_at DESC 
+      LIMIT ?
+    `);
+    return stmt.all(status, limit) as ScheduledTaskLog[];
+  }
+
+  getAllTaskLogs(limit: number = 100): ScheduledTaskLog[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM scheduled_task_logs 
+      ORDER BY started_at DESC 
+      LIMIT ?
+    `);
+    return stmt.all(limit) as ScheduledTaskLog[];
+  }
+
+  updateTaskLog(id: number, updateData: Partial<CreateScheduledTaskLogData>): ScheduledTaskLog | null {
+    const fields = [];
+    const values = [];
+    
+    for (const [key, value] of Object.entries(updateData)) {
+      if (value !== undefined) {
+        fields.push(`${key} = ?`);
+        values.push(value);
+      }
+    }
+    
+    if (fields.length === 0) {
+      return this.getTaskLogById(id);
+    }
+    
+    values.push(id);
+    const stmt = this.db.prepare(`
+      UPDATE scheduled_task_logs 
+      SET ${fields.join(', ')}
+      WHERE id = ?
+    `);
+    
+    stmt.run(...values);
+    return this.getTaskLogById(id);
+  }
+
+  deleteOldTaskLogs(daysOld: number = 30): number {
+    const cutoffDate = new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000).toISOString();
+    const stmt = this.db.prepare('DELETE FROM scheduled_task_logs WHERE created_at < ?');
+    const result = stmt.run(cutoffDate);
+    return result.changes;
+  }
+
+  getTaskExecutionStats(taskName?: string): {
+    total: number;
+    success: number;
+    failed: number;
+    running: number;
+    avgDuration: number | null;
+  } {
+    let whereClause = '';
+    const params: (string | number)[] = [];
+    
+    if (taskName) {
+      whereClause = 'WHERE task_name = ?';
+      params.push(taskName);
+    }
+    
+    const stmt = this.db.prepare(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN execution_status = 'success' THEN 1 ELSE 0 END) as success,
+        SUM(CASE WHEN execution_status = 'failed' THEN 1 ELSE 0 END) as failed,
+        SUM(CASE WHEN execution_status = 'running' THEN 1 ELSE 0 END) as running,
+        AVG(CASE WHEN duration_ms IS NOT NULL THEN duration_ms ELSE NULL END) as avgDuration
+      FROM scheduled_task_logs
+      ${whereClause}
+    `);
+    
+    return stmt.get(...params) as {
+      total: number;
+      success: number;
+      failed: number;
+      running: number;
+      avgDuration: number | null;
+    };
   }
 }
