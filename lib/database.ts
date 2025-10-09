@@ -777,6 +777,7 @@ export const PAYMENT_CHANNEL_STATUS = {
   ACTIVE: 2,      // 已激活  
   INVALID: 3,     // 已作废
   SETTLED: 4,     // 已结算
+  EXPIRED: 5,     // 已过期
 } as const;
 
 export type PaymentChannelStatus = typeof PAYMENT_CHANNEL_STATUS[keyof typeof PAYMENT_CHANNEL_STATUS];
@@ -1033,6 +1034,44 @@ export class PaymentChannelRepository {
     
     stmt.run(status, channelId);
     return this.getPaymentChannelById(channelId);
+  }
+
+  // Method to get expired active channels
+  getExpiredActiveChannels(): PaymentChannel[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM payment_channels 
+      WHERE status = ? 
+      AND datetime(created_at, '+' || duration_days || ' days') < datetime('now')
+      ORDER BY created_at ASC
+    `);
+    return stmt.all(PAYMENT_CHANNEL_STATUS.ACTIVE) as PaymentChannel[];
+  }
+
+  // Method to expire a channel by channel_id
+  expirePaymentChannel(channelId: string): PaymentChannel | null {
+    return this.updatePaymentChannelStatus(channelId, PAYMENT_CHANNEL_STATUS.EXPIRED);
+  }
+
+  // Batch method to expire multiple channels
+  expirePaymentChannels(channelIds: string[]): number {
+    const transaction = this.db.transaction(() => {
+      const stmt = this.db.prepare(`
+        UPDATE payment_channels 
+        SET status = ?, updated_at = CURRENT_TIMESTAMP 
+        WHERE channel_id = ?
+      `);
+      
+      let expiredCount = 0;
+      for (const channelId of channelIds) {
+        const result = stmt.run(PAYMENT_CHANNEL_STATUS.EXPIRED, channelId);
+        if (result.changes > 0) {
+          expiredCount++;
+        }
+      }
+      return expiredCount;
+    });
+    
+    return transaction();
   }
 }
 

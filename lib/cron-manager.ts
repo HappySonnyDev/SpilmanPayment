@@ -33,6 +33,12 @@ class CronManager {
         description: 'Auto-settle payment channels expiring within 15 minutes',
         schedule: '* * * * *', // Every minute
         taskFunction: this.autoSettleTask.bind(this)
+      },
+      {
+        name: 'check-expired-channels',
+        description: 'Check and expire payment channels that have passed their duration',
+        schedule: '*/10 * * * *', // Every 10 minutes
+        taskFunction: this.checkExpiredChannelsTask.bind(this)
       }
     ];
 
@@ -93,6 +99,61 @@ class CronManager {
       
     } catch (error) {
       console.error('[CRON-MANAGER] ❌ Auto-settlement task error:', error);
+      throw error; // Re-throw to ensure proper error handling
+    }
+  }
+
+  private async checkExpiredChannelsTask(): Promise<void> {
+    try {
+      console.log('[CRON-MANAGER] 🕐 Running check expired channels task...');
+      
+      // Determine the correct API URL (use environment variable or default)
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 
+                    process.env.NODE_ENV === 'production' 
+                      ? 'https://your-domain.com' 
+                      : 'http://localhost:3000';
+      
+      // Try different ports if the default fails
+      const portsToTry = [3000, 3001, 3002];
+      let lastError: Error | null = null;
+      
+      for (const port of portsToTry) {
+        try {
+          const url = apiUrl.includes('localhost') 
+            ? `http://localhost:${port}/api/admin/check-expired-channels`
+            : `${apiUrl}/api/admin/check-expired-channels`;
+            
+          console.log(`[CRON-MANAGER] Trying API URL: ${url}`);
+          
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (response.ok) {
+            const result = await response.json();
+            console.log('[CRON-MANAGER] ✅ Check expired channels completed:', {
+              expiredCount: result.data?.expired_count || 0,
+              checkedCount: result.data?.checked_count || 0
+            });
+            return; // Success, exit the function
+          } else {
+            console.log(`[CRON-MANAGER] API responded with status ${response.status} for port ${port}`);
+            lastError = new Error(`HTTP ${response.status}`);
+          }
+        } catch (error) {
+          console.log(`[CRON-MANAGER] Failed to connect to port ${port}:`, error instanceof Error ? error.message : error);
+          lastError = error instanceof Error ? error : new Error(String(error));
+        }
+      }
+      
+      // If we get here, all ports failed
+      throw lastError || new Error('All API endpoints failed');
+      
+    } catch (error) {
+      console.error('[CRON-MANAGER] ❌ Check expired channels task error:', error);
       throw error; // Re-throw to ensure proper error handling
     }
   }

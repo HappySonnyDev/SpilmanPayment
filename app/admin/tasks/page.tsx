@@ -499,6 +499,10 @@ export default function ScheduledTasksPage() {
                   minutes.
                 </p>
                 <p>
+                  • <strong>Check Expired Channels:</strong> Checks active payment
+                  channels every 10 minutes and marks expired ones as &quot;Expired&quot; status.
+                </p>
+                <p>
                   • <strong>Manual Execution:</strong> Use &quot;Run Now&quot;
                   to execute a task immediately for testing or immediate
                   settlement.

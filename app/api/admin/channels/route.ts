@@ -12,6 +12,8 @@ function getStatusText(status: number): string {
       return 'Invalid';
     case PAYMENT_CHANNEL_STATUS.SETTLED:
       return 'Settled';
+    case PAYMENT_CHANNEL_STATUS.EXPIRED:
+      return 'Expired';
     default:
       return 'Unknown';
   }
