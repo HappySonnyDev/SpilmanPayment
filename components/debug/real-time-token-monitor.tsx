@@ -14,7 +14,7 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
-import { useAuth } from '@/components/auth/auth-context';
+import { useAuth } from '@/app/context/auth-context';
 
 interface TokenUsageData {
   channelId: string;

@@ -10,7 +10,7 @@ import {
   ComposerAddAttachment,
   ComposerAttachments,
 } from "@/components/assistant-ui/attachment";
-import { useAuth } from "@/components/auth/auth-context";
+import { useAuth } from "@/app/context/auth-context";
 import { useChunkPayment } from "@/hooks/use-chunk-payment";
 import {
   AlertTriangle,

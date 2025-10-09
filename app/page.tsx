@@ -1,6 +1,6 @@
 "use client";
 
-import { useAuth } from '@/components/auth/auth-context';
+import { useAuth } from '@/app/context/auth-context';
 import { Assistant } from "./assistant";
 
 export default function Home() {

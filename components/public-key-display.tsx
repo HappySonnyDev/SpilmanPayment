@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { useAuth } from "@/components/auth/auth-context";
+import { useAuth } from "@/app/context/auth-context";
 
 export const PublicKeyDisplay: React.FC = () => {
   const { user } = useAuth();

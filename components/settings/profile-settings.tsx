@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useAuth } from "@/components/auth/auth-context";
+import { useAuth } from "@/app/context/auth-context";
 import { PublicKeyDisplay } from "@/components/public-key-display";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

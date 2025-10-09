@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { useAuth } from '@/components/auth/auth-context';
+import { useAuth } from '@/app/context/auth-context';
 import { usePaymentTransaction, PaymentTransactionData } from './use-payment-transaction';
 import { jsonStr } from '@/lib/ckb';
 

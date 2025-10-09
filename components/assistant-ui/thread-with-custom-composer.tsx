@@ -30,7 +30,7 @@ import { LazyMotion, MotionConfig, domAnimation } from "motion/react";
 import * as m from "motion/react-m";
 import { AuthAwareComposer } from "@/components/assistant-ui/auth-aware-composer";
 import { ChunkAwareComposer } from "@/components/assistant-ui/chunk-aware-composer";
-import { useAuth } from '@/components/auth/auth-context';
+import { useAuth } from '@/app/context/auth-context';
 import { useAssistantRuntime } from "@assistant-ui/react";
 
 interface ThreadWithCustomComposerProps {

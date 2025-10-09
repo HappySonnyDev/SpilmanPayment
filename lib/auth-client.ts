@@ -47,24 +47,6 @@ export async function loginWithPrivateKey(privateKey: string): Promise<User> {
   return data.user;
 }
 
-// Legacy login function (for backward compatibility)
-export async function loginUser(emailOrUsername: string, password: string): Promise<User> {
-  const response = await fetch('/api/auth/login', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ emailOrUsername, password }),
-  });
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data.error || 'Login failed');
-  }
-
-  return data.user;
-}
 
 // Registration is no longer needed - users are auto-created on private key login
 export async function registerUser(email: string, username: string, password: string): Promise<User> {

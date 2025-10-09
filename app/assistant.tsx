@@ -12,16 +12,10 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { ThreadListSidebar } from "@/components/assistant-ui/threadlist-sidebar";
-import { Separator } from "@/components/ui/separator";
 import {
   Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import { useAuth } from "@/components/auth/auth-context";
+import { useAuth } from "@/app/context/auth-context";
 import { AuthDialog } from "@/components/auth/auth-dialog";
 import { UserSettingsDialog } from "@/components/ui/user-settings-dialog";
 import { useState, useEffect } from "react";
@@ -40,7 +34,6 @@ export const Assistant = () => {
   const { user, logout } = useAuth();
   const { payForChunk } = useChunkPayment();
   const [showAuthDialog, setShowAuthDialog] = useState(false);
-  const [authDialogTab, setAuthDialogTab] = useState<'login' | 'register'>('login');
   const [pendingMessage, setPendingMessage] = useState('');
   const [showUserSettings, setShowUserSettings] = useState(false);
   const [userSettingsTab, setUserSettingsTab] = useState<'profile' | 'usage' | 'billing' | 'recharge'>('profile');
@@ -142,7 +135,6 @@ export const Assistant = () => {
   });
 
   const handleAuthRequired = () => {
-    setAuthDialogTab('login');
     setShowAuthDialog(true);
   };
 
@@ -181,25 +173,6 @@ export const Assistant = () => {
             <SidebarInset>
               <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
                 <SidebarTrigger />
-                {/* <Separator orientation="vertical" className="mr-2 h-4" /> */}
-                <Breadcrumb>
-                  {/* <BreadcrumbList>
-                    <BreadcrumbItem className="hidden md:block">
-                      <BreadcrumbLink
-                        href="https://www.assistant-ui.com/docs/getting-started"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        AI Assistant
-                      </BreadcrumbLink>
-                    </BreadcrumbItem>
-                    <BreadcrumbSeparator className="hidden md:block" />
-                    <BreadcrumbItem>
-                      <BreadcrumbPage>Chat</BreadcrumbPage>
-                    </BreadcrumbItem>
-                  </BreadcrumbList> */}
-                </Breadcrumb>
-                
                 {/* Auth Section - Right side */}
                 <div className="ml-auto">
                   {user ? (
@@ -249,7 +222,6 @@ export const Assistant = () => {
                     // User not logged in - show login button
                     <Button 
                       onClick={() => {
-                        setAuthDialogTab('login');
                         setShowAuthDialog(true);
                       }}
                       size="sm"

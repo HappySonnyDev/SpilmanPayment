@@ -9,28 +9,18 @@ import {
 } from "react";
 import {
   User,
-  loginUser,
   loginWithPrivateKey as loginWithPrivateKeyAPI,
-  registerUser,
   logoutUser,
   getCurrentUser,
-  isLoggedIn,
   getStoredPrivateKey,
   clearStoredCredentials,
 } from "@/lib/auth-client";
-import { useUserInfo } from "@/lib/user-info-context";
 
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (emailOrUsername: string, password: string) => Promise<void>;
   loginWithPrivateKey: (privateKey: string) => Promise<void>;
-  register: (
-    email: string,
-    username: string,
-    password: string,
-  ) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -40,7 +30,6 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const { updatePublicKey } = useUserInfo();
 
   // Check authentication status on mount
   useEffect(() => {
@@ -58,41 +47,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const userData = await getCurrentUser();
           if (userData) {
             setUser(userData);
-            // Update public key state
-            if (userData?.public_key) {
-              updatePublicKey(userData.public_key);
-            }
           } else {
             // If server doesn't return user info, clear invalid credentials
             clearStoredCredentials();
             setUser(null);
-            updatePublicKey(null);
           }
         } catch (error) {
           // If request fails, clear invalid credentials
           clearStoredCredentials();
           setUser(null);
-          updatePublicKey(null);
         }
       } else {
         // No private key in localStorage, user is not logged in
         setUser(null);
-        updatePublicKey(null);
       }
     } catch {
       setUser(null);
-      updatePublicKey(null);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const login = async (emailOrUsername: string, password: string) => {
-    const user = await loginUser(emailOrUsername, password);
-    setUser(user);
-    // Update public key state
-    if (user?.public_key) {
-      updatePublicKey(user.public_key);
     }
   };
 
@@ -103,24 +75,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('private_key', privateKey);
     
     setUser(userData);
-    // Update public key state
-    if (userData?.public_key) {
-      updatePublicKey(userData.public_key);
-    }
   };
 
-  const register = async (
-    email: string,
-    username: string,
-    password: string,
-  ) => {
-    const user = await registerUser(email, username, password);
-    setUser(user);
-    // Update public key state
-    if (user?.public_key) {
-      updatePublicKey(user.public_key);
-    }
-  };
 
   const logout = async () => {
     try {
@@ -133,7 +89,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearStoredCredentials();
     
     setUser(null);
-    updatePublicKey(null);
   };
 
   const refreshUser = async () => {
@@ -143,9 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = {
     user,
     isLoading,
-    login,
     loginWithPrivateKey,
-    register,
     logout,
     refreshUser,
   };
@@ -160,3 +113,4 @@ export function useAuth() {
   }
   return context;
 }
+

@@ -6,7 +6,7 @@ import { ArrowUpIcon, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { ComposerAddAttachment, ComposerAttachments } from "@/components/assistant-ui/attachment";
-import { useAuth } from '@/components/auth/auth-context';
+import { useAuth } from '@/app/context/auth-context';
 import * as m from "motion/react-m";
 
 interface CustomComposerProps {

@@ -2,7 +2,7 @@ import { ComposerPrimitive, ThreadPrimitive, useComposerRuntime, useAssistantRun
 import { Button } from "@/components/ui/button";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { ComposerAddAttachment, ComposerAttachments } from "@/components/assistant-ui/attachment";
-import { useAuth } from '@/components/auth/auth-context';
+import { useAuth } from '@/app/context/auth-context';
 import { useChunkPayment } from '@/hooks/use-chunk-payment';
 import { AlertTriangle, Coins, X, ArrowUpIcon, Square, Check, Loader2, Eye } from "lucide-react";
 import React, { useState, useEffect, useCallback } from 'react';

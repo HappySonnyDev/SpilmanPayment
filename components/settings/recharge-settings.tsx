@@ -2,8 +2,7 @@
 
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { useUserInfo } from "@/lib/user-info-context";
-import { useAuth } from "@/components/auth/auth-context";
+import { useAuth } from "@/app/context/auth-context";
 import { createPaymentChannel, DEVNET_SCRIPTS, jsonStr } from "@/lib/ckb";
 import { ccc } from "@ckb-ccc/core";
 import { executePayNow } from "@/lib/payment-utils";
@@ -42,7 +41,6 @@ export const RechargeSettings: React.FC = () => {
   const [paymentData, setPaymentData] = useState<PaymentChannelData | null>(
     null,
   );
-  const { userInfo } = useUserInfo();
   const { user } = useAuth();
 
   const amounts = [
@@ -87,7 +85,7 @@ export const RechargeSettings: React.FC = () => {
 
       console.log("Creating payment channel with:", {
         sellerPublicKey,
-        buyerPublicKey: userInfo.publicKey, // This is the buyer's public key
+        buyerPublicKey: user?.public_key, // This is the buyer's public key
         amount: selectedAmount,
         duration: selectedDuration,
         tokens: tokenAmount,
@@ -215,10 +213,10 @@ export const RechargeSettings: React.FC = () => {
           );
           // Fallback to lock args or user public key
           buyerAddress =
-            refundTx.outputs[0].lock.args || userInfo.publicKey || "N/A";
+            refundTx.outputs[0].lock.args || user?.public_key || "N/A";
         }
       } else {
-        buyerAddress = userInfo.publicKey || "N/A";
+        buyerAddress = user?.public_key || "N/A";
       }
 
       return {
@@ -229,7 +227,7 @@ export const RechargeSettings: React.FC = () => {
       console.error("Error parsing refund transaction:", error);
       return {
         inputTxHash: "N/A",
-        buyerAddress: userInfo.publicKey || "N/A",
+        buyerAddress: user?.public_key || "N/A",
       };
     }
   };

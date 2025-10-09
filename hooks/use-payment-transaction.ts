@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { useAuth } from "@/components/auth/auth-context";
+import { useAuth } from "@/app/context/auth-context";
 import { ccc } from "@ckb-ccc/core";
 import {
   DEVNET_SCRIPTS,

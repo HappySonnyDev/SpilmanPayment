@@ -14,12 +14,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useUserInfo } from "@/lib/user-info-context";
 import { ccc, hexFrom, WitnessArgs } from "@ckb-ccc/core";
 import { DEVNET_SCRIPTS, buildClient, generateCkbSecp256k1Signature, generateCkbSecp256k1SignatureWithSince, createWitnessData, getMessageHashFromTx } from "@/lib/ckb";
 import { executePayNow } from "@/lib/payment-utils";
 import { ChevronDown } from "lucide-react";
-
+import { useAuth } from "@/app/context/auth-context";
 
 interface PaymentChannel {
   id: number;
@@ -44,14 +43,14 @@ export const PaymentChannelSettings: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [expandedChannels, setExpandedChannels] = useState<Set<string>>(new Set());
-  const { userInfo } = useUserInfo();
+  const { user } = useAuth();
 
   // Extract transaction information from refund transaction data
   const extractRefundTxInfo = (refundTxData: string | null) => {
     if (!refundTxData) {
       return {
         inputTxHash: "N/A",
-        buyerAddress: userInfo?.publicKey || "N/A",
+        buyerAddress: user?.public_key || "N/A",
       };
     }
 
@@ -83,10 +82,10 @@ export const PaymentChannelSettings: React.FC = () => {
           );
           // Fallback to lock args or user public key
           buyerAddress =
-            refundTx.outputs[0].lock.args || userInfo?.publicKey || "N/A";
+            refundTx.outputs[0].lock.args || user?.public_key || "N/A";
         }
       } else {
-        buyerAddress = userInfo?.publicKey || "N/A";
+        buyerAddress = user?.public_key || "N/A";
       }
 
       return {
@@ -97,7 +96,7 @@ export const PaymentChannelSettings: React.FC = () => {
       console.error("Error parsing refund transaction:", error);
       return {
         inputTxHash: "N/A",
-        buyerAddress: userInfo?.publicKey || "N/A",
+        buyerAddress: user?.public_key || "N/A",
       };
     }
   };
