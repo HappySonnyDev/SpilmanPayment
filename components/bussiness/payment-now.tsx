@@ -2,24 +2,17 @@
 
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/app/context/auth-context";
-import { DEVNET_SCRIPTS } from "@/lib/ckb";
+import { PaymentSummary } from "@/components/bussiness/payment-summary";
+import { DataDisplay } from "@/components/bussiness/data-display";
+import { buildClientAndSigner } from "@/lib/ckb";
 import { ccc } from "@ckb-ccc/core";
-import { executePayNow } from "@/lib/payment-utils";
+import { channel } from "@/lib/api";
 
-interface RefundTransaction {
-  inputs?: Array<{
-    previousOutput?: {
-      txHash?: string;
-    };
-  }>;
-  outputs?: Array<{
-    lock?: {
-      codeHash?: string;
-      hashType?: string;
-      args?: string;
-    };
-  }>;
+interface PaymentResult {
+  success: boolean;
+  txHash?: string;
+  error?: string;
+  channelStatus?: string;
 }
 
 interface PaymentChannelData {
@@ -27,8 +20,8 @@ interface PaymentChannelData {
   status: number;
   statusText: string;
   sellerSignature: string;
-  refundTx: RefundTransaction;
-  fundingTx: Record<string, unknown>;
+  refundTx: unknown;
+  fundingTx: unknown;
   amount: number;
   duration: number;
   createdAt: string;
@@ -45,11 +38,65 @@ export const PaymentNow: React.FC<PaymentNowProps> = ({
   onBack,
   onPaymentComplete,
 }) => {
-  const { user } = useAuth();
+  /**
+   * Executes the PayNow payment flow - sends funding transaction and confirms payment
+   */
+  const executePayNow = async (paymentData: {
+    channelId: string;
+    fundingTx: Record<string, unknown>;
+    amount: number;
+  }): Promise<PaymentResult> => {
+    try {
+      // Get buyer private key from localStorage
+      const buyerPrivateKey = localStorage.getItem("private_key");
 
-  // Calculate tokens based on pricing: 1 CKB = 0.01 Token
-  const calculateTokens = (ckbAmount: number) => {
-    return ckbAmount * 0.01;
+      if (!buyerPrivateKey) {
+        throw new Error("Please connect your CKB wallet first in Profile settings.");
+      }
+
+      // Convert fundingTx to CCC transaction
+      const fundingTx = ccc.Transaction.from(paymentData.fundingTx);
+
+      // Create CKB client and buyer signer
+      const { client: cccClient, signer: buyerSigner } = buildClientAndSigner(buyerPrivateKey);
+
+      console.log("Sending funding transaction:", fundingTx);
+
+      // Send the funding transaction
+      const txHash = await buyerSigner.sendTransaction(fundingTx);
+
+      console.log("Funding transaction sent successfully:", txHash);
+      
+      // Call confirm-funding API to verify transaction and activate channel
+      try {
+        const confirmResult = await channel.confirmFunding({
+          txHash: txHash,
+          channelId: paymentData.channelId,
+        });
+        console.log('Payment confirmed and channel activated:', confirmResult);
+        
+        return {
+          success: true,
+          txHash,
+          channelStatus: (confirmResult as { data?: { statusText?: string } }).data?.statusText,
+        };
+        
+      } catch (confirmError) {
+        console.error('Error confirming payment:', confirmError);
+        return {
+          success: false,
+          txHash,
+          error: `Payment sent successfully but could not verify channel activation. Transaction Hash: ${txHash}. Please contact support if needed.`,
+        };
+      }
+      
+    } catch (error) {
+      console.error('Payment error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown payment error',
+      };
+    }
   };
 
   const handlePayment = async () => {
@@ -57,7 +104,7 @@ export const PaymentNow: React.FC<PaymentNowProps> = ({
       // Use the shared payment utility
       const result = await executePayNow({
         channelId: paymentData.channelId,
-        fundingTx: paymentData.fundingTx,
+        fundingTx: paymentData.fundingTx as Record<string, unknown>,
         amount: paymentData.amount,
       });
 
@@ -81,56 +128,6 @@ export const PaymentNow: React.FC<PaymentNowProps> = ({
     }
   };
 
-  // Extract refund transaction info
-  const getRefundTxInfo = (refundTx: RefundTransaction) => {
-    try {
-      // Get input transaction hash from first input
-      const inputTxHash = refundTx.inputs?.[0]?.previousOutput?.txHash || "N/A";
-
-      // Get buyer address from first output lock script
-      let buyerAddress = "N/A";
-      if (refundTx.outputs?.[0]?.lock) {
-        try {
-          const lockScript = refundTx.outputs[0].lock;
-          // Create a mock client for address conversion
-          const cccClient = new ccc.ClientPublicTestnet({
-            url: "http://localhost:28114",
-            scripts: DEVNET_SCRIPTS,
-          });
-          const address = ccc.Address.fromScript(
-            lockScript as ccc.Script,
-            cccClient,
-          ).toString();
-          buyerAddress = address;
-        } catch (addressError) {
-          console.error(
-            "Error converting lock script to address:",
-            addressError,
-          );
-          // Fallback to lock args or user public key
-          buyerAddress =
-            refundTx.outputs[0].lock.args || user?.public_key || "N/A";
-        }
-      } else {
-        buyerAddress = user?.public_key || "N/A";
-      }
-
-      return {
-        inputTxHash,
-        buyerAddress,
-      };
-    } catch (error) {
-      console.error("Error parsing refund transaction:", error);
-      return {
-        inputTxHash: "N/A",
-        buyerAddress: user?.public_key || "N/A",
-      };
-    }
-  };
-
-  const refundTxInfo = getRefundTxInfo(paymentData.refundTx);
-  const tokenAmount = calculateTokens(paymentData.amount);
-
   return (
     <div className="flex h-[600px] w-full max-w-none flex-col">
       {/* Scrollable content area */}
@@ -152,78 +149,30 @@ export const PaymentNow: React.FC<PaymentNowProps> = ({
           <h4 className="mb-4 text-base font-semibold text-slate-700 dark:text-slate-300">
             Product Information
           </h4>
-          <div className="rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-6 dark:border-blue-700 dark:from-blue-900/20 dark:to-indigo-900/20">
-            <div className="grid grid-cols-3 gap-6 text-center">
-              <div className="space-y-2">
-                <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                  {paymentData.amount}
-                </div>
-                <div className="text-sm font-medium tracking-wider text-blue-800 uppercase dark:text-blue-300">
-                  CKB
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-                  {tokenAmount.toLocaleString()}
-                </div>
-                <div className="text-sm font-medium tracking-wider text-green-800 uppercase dark:text-green-300">
-                  Tokens
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
-                  {paymentData.duration >= 86400
-                    ? `${Math.floor(paymentData.duration / 86400)}`
-                    : `${paymentData.duration}s`}
-                </div>
-                <div className="text-sm font-medium tracking-wider text-purple-800 uppercase dark:text-purple-300">
-                  {paymentData.duration >= 86400
-                    ? Math.floor(paymentData.duration / 86400) > 1
-                      ? "Days"
-                      : "Day"
-                    : "Seconds"}
-                </div>
-              </div>
-            </div>
-          </div>
+          <PaymentSummary
+            amount={paymentData.amount}
+            duration={paymentData.duration}
+            showRate={true}
+          />
         </div>
 
-        {/* Deposit Information */}
-        <div className="mb-8">
-          <h4 className="mb-4 text-base font-semibold text-slate-700 dark:text-slate-300">
-            Deposit Information
-          </h4>
-          <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-6 dark:border-slate-700 dark:bg-slate-800">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-600 dark:text-slate-400">
-                Input Transaction Hash
-              </label>
-              <div className="rounded-lg border border-slate-200 bg-white p-3 font-mono text-sm break-all dark:border-slate-600 dark:bg-slate-900">
-                {refundTxInfo.inputTxHash}
-              </div>
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-600 dark:text-slate-400">
-                output Wallet Address
-              </label>
-              <div className="rounded-lg border border-slate-200 bg-white p-3 font-mono text-sm break-all dark:border-slate-600 dark:bg-slate-900">
-                {refundTxInfo.buyerAddress}
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* Refund Transaction */}
+        <DataDisplay
+          title="Refund Transaction"
+          data={paymentData.refundTx}
+        />
+
+        {/* Funding Transaction */}
+        <DataDisplay
+          title="Funding Transaction"
+          data={paymentData.fundingTx}
+        />
 
         {/* Seller Signature */}
-        <div className="mb-8">
-          <h4 className="mb-4 text-base font-semibold text-slate-700 dark:text-slate-300">
-            Seller Signature
-          </h4>
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 dark:border-slate-700 dark:bg-slate-800">
-            <div className="rounded-lg border border-slate-200 bg-white p-3 font-mono text-sm break-all dark:border-slate-600 dark:bg-slate-900">
-              {paymentData.sellerSignature}
-            </div>
-          </div>
-        </div>
+        <DataDisplay
+          title="Seller Signature"
+          data={paymentData.sellerSignature}
+        />
 
         {/* Add bottom padding to prevent content overlap with fixed button */}
         <div className="pb-4">
@@ -240,7 +189,7 @@ export const PaymentNow: React.FC<PaymentNowProps> = ({
       <div className="border-t bg-white p-4 shadow-lg dark:border-slate-700 dark:bg-slate-900">
         <Button
           onClick={handlePayment}
-          className="hover:shadow-3xl w-full bg-gradient-to-r from-green-600 to-emerald-600 px-8 py-6 text-xl font-semibold shadow-2xl transition-all duration-300 hover:scale-102 hover:from-green-700 hover:to-emerald-700"
+          className="w-full bg-slate-900 px-8 py-6 text-xl font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-700 dark:hover:bg-slate-600"
           size="lg"
         >
           🔒 Pay Now - {paymentData.amount} CKB

@@ -9,6 +9,7 @@ import {
   derivePublicKeyHashByPrivateKey,
   derivePublicKeyHashByPublicKey,
   jsonStr,
+  createPlaceholderWitness,
 } from "@/lib/ckb";
 
 export interface PaymentTransactionData {
@@ -116,8 +117,7 @@ export function usePaymentTransaction() {
 
         // 买家签名前先push正确长度的占位符 (132 bytes for multisig)
         // 创建132字节的占位符: 65字节买方签名 + 65字节卖方签名 + 2字节索引
-        const placeholderWitness = ("0x" + "00".repeat(132)) as `0x${string}`;
-        paymentTx.witnesses.push(placeholderWitness);
+        paymentTx.witnesses.push(createPlaceholderWitness());
 
         const fee = 1400; // 固定手续费
         console.log(jsonStr(paymentTx), "paymentTxbefore=======");

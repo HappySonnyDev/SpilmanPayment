@@ -6,6 +6,7 @@ import { SelectionGroup } from "@/components/bussiness/selection-group";
 import { useAuth } from "@/app/context/auth-context";
 import { createPaymentChannel, jsonStr } from "@/lib/ckb";
 import { channel } from "@/lib/api";
+import { PaymentSummary } from "@/components/bussiness/payment-summary";
 
 interface PaymentChannelData {
   channelId: string;
@@ -49,8 +50,6 @@ export const CreatePaymentChannel: React.FC<CreatePaymentChannelProps> = ({
   const [isCreating, setIsCreating] = useState(false);
   const { user, privateKey } = useAuth();
 
-  const tokenAmount = calculateTokens(selectedAmount);
-
   const handleCreatePaymentChannel = async () => {
     try {
       setIsCreating(true);
@@ -79,8 +78,8 @@ export const CreatePaymentChannel: React.FC<CreatePaymentChannelProps> = ({
       // Pass payment data to parent component
       onChannelCreated({
         ...apiResult.data,
-        refundTx: result.refundTx,
-        fundingTx: apiResult.data.fundingTx,
+        // The API returns the corrected refund transaction with fees deducted
+        // No need to override refundTx since apiResult.data already contains the correct one
       });
     } catch (error) {
       console.error("Error creating payment channel:", error);
@@ -117,47 +116,12 @@ export const CreatePaymentChannel: React.FC<CreatePaymentChannelProps> = ({
       {/* Create Payment Channel Button */}
       <div className="mb-8">
         {/* Highlighted Summary */}
-        <div className="mb-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-          <div className="grid grid-cols-3 gap-6 text-center">
-            <div className="space-y-2">
-              <div className="text-3xl font-bold text-slate-900 dark:text-white">
-                {selectedAmount}
-              </div>
-              <div className="text-sm font-medium tracking-wider text-slate-600 uppercase dark:text-slate-400">
-                CKB
-              </div>
-            </div>
-            <div className="space-y-2">
-              <div className="text-3xl font-bold text-slate-900 dark:text-white">
-                {tokenAmount.toLocaleString()}
-              </div>
-              <div className="text-sm font-medium tracking-wider text-slate-600 uppercase dark:text-slate-400">
-                Tokens
-              </div>
-            </div>
-            <div className="space-y-2">
-              <div className="text-3xl font-bold text-slate-700 dark:text-slate-300">
-                {selectedDuration >= 86400
-                  ? Math.floor(selectedDuration / 86400)
-                  : `${selectedDuration}s`}
-              </div>
-              <div className="text-sm font-medium tracking-wider text-slate-600 uppercase dark:text-slate-400">
-                {selectedDuration >= 86400
-                  ? Math.floor(selectedDuration / 86400) > 1
-                    ? "Days"
-                    : "Day"
-                  : "Seconds"}
-              </div>
-            </div>
-          </div>
-          <div className="mt-4 text-center">
-            <p className="text-sm text-slate-600 dark:text-slate-400">
-              Rate:{" "}
-              <span className="font-semibold text-slate-900 dark:text-white">
-                1 CKB = 0.01 Token
-              </span>
-            </p>
-          </div>
+        <div className="mb-6">
+          <PaymentSummary
+            amount={selectedAmount}
+            duration={selectedDuration}
+            showRate={true}
+          />
         </div>
 
         <Button

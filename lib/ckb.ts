@@ -298,13 +298,16 @@ export const generateCkbSecp256k1SignatureWithSince = (
   // Generate signature using the combined hash
   return generateCkbSecp256k1Signature(privateKey, finalMessageHash);
 };
-export const jsonStr = (obj: unknown) => {
-  return JSON.stringify(obj, (key, value) => {
+export const jsonStr = (obj: unknown, replacer?: ((key: string, value: unknown) => unknown) | null, space?: string | number) => {
+  const customReplacer = (key: string, value: unknown) => {
     if (typeof value === "bigint") {
       return value.toString(); // 或者 return Number(value)（注意精度！）
     }
-    return value;
-  });
+    // If a custom replacer is provided, apply it after bigint handling
+    return replacer ? replacer(key, value) : value;
+  };
+  
+  return JSON.stringify(obj, replacer || customReplacer, space);
 };
 
 export const createWitnessData = (
@@ -317,6 +320,14 @@ export const createWitnessData = (
   witnessData[130] = 0; // buyer pubkey index
   witnessData[131] = 1; // seller pubkey index
   return witnessData;
+};
+
+/**
+ * Creates a placeholder witness for transactions that require 132-byte witness
+ * Commonly used for multisig transactions before actual signatures are added
+ */
+export const createPlaceholderWitness = (): `0x${string}` => {
+  return ("0x" + "00".repeat(132)) as `0x${string}`;
 };
 
 /**

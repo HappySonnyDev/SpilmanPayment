@@ -9,14 +9,18 @@ interface PaymentChannelData {
   status: number;
   statusText: string;
   sellerSignature: string;
-  refundTx: Record<string, unknown>;
-  fundingTx: Record<string, unknown>;
+  refundTx: unknown;
+  fundingTx: unknown;
   amount: number;
   duration: number;
   createdAt: string;
 }
 
-export const RechargeSettings: React.FC = () => {
+interface RechargeSettingsProps {
+  onNavigateToChannels?: () => void;
+}
+
+export const RechargeSettings: React.FC<RechargeSettingsProps> = ({ onNavigateToChannels }) => {
   const [paymentData, setPaymentData] = useState<PaymentChannelData | null>(null);
 
   const handleChannelCreated = (data: PaymentChannelData) => {
@@ -29,6 +33,10 @@ export const RechargeSettings: React.FC = () => {
 
   const handlePaymentComplete = () => {
     setPaymentData(null);
+    // Navigate to Payment Channel panel after payment completion
+    if (onNavigateToChannels) {
+      onNavigateToChannels();
+    }
   };
 
   // If payment data exists, show payment page

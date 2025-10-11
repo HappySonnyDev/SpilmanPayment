@@ -6,27 +6,12 @@ import {
 } from "@/lib/database";
 import {
   getMessageHashFromTx,
-  generateCkbSecp256k1Signature,
   generateCkbSecp256k1SignatureWithSince,
-  buildClient,
   jsonStr,
+  createPlaceholderWitness,
 } from "@/lib/ckb";
-import { ccc, WitnessArgs } from "@ckb-ccc/core";
-import { hexFrom } from "@ckb-ccc/core";
-import * as fs from "fs";
-import * as path from "path";
-import { secp256k1 } from "@noble/curves/secp256k1";
+import { ccc } from "@ckb-ccc/core";
 
-// Load system scripts configuration
-function loadSystemScripts() {
-  const scriptsPath = path.join(
-    process.cwd(),
-    "deployment",
-    "system-scripts.json",
-  );
-  const scriptsContent = fs.readFileSync(scriptsPath, "utf-8");
-  return JSON.parse(scriptsContent);
-}
 
 // Request body interface
 interface CreateChannelRequest {
@@ -76,21 +61,12 @@ export async function POST(request: NextRequest) {
     }
 
     const refundCCC = ccc.Transaction.from(refundTx);
-    const placeholderWitness = ("0x" + "00".repeat(132)) as `0x${string}`;
-    refundCCC.witnesses.push(placeholderWitness);
+    refundCCC.witnesses.push(createPlaceholderWitness());
 
-    // Build client for transaction construction
-    const client = buildClient("devnet");
-    const sellerSigner = new ccc.SignerCkbPrivateKey(client, sellerPrivateKey);
 
     // New approach: Deduct fee from buyer's refund amount instead of seller paying
     // This simplifies transaction structure and avoids P2PH signing complexity
     const estimatedFee = BigInt(1400); // 1400 shannons for transaction fee
-
-    console.log(
-      `Original buyer refund amount: ${refundCCC.outputs[0].capacity}`,
-    );
-    console.log(`Estimated transaction fee: ${estimatedFee}`);
 
     // Calculate net refund amount (original amount minus fee)
     const originalRefundAmount = refundCCC.outputs[0].capacity;
@@ -105,16 +81,6 @@ export async function POST(request: NextRequest) {
     console.log(`Net refund amount after fee deduction: ${netRefundAmount}`);
     console.log(`Fee will be absorbed by network: ${estimatedFee}`);
 
-    // Transaction now has proper input-output balance:
-    // Input: Original channel capacity
-    // Output: Reduced refund amount
-    // Difference: Becomes transaction fee automatically
-
-    console.log(
-      jsonStr(refundCCC),
-      "Simplified refund transaction with fee deducted from buyer's amount",
-    );
-
     // Generate message hash from completed refund transaction
     const refundTxHash = refundCCC.hash();
     if (!refundTxHash) {
@@ -127,22 +93,19 @@ export async function POST(request: NextRequest) {
     const messageHash = getMessageHashFromTx(refundTxHash);
 
     // Generate seller signature with correct since value
-    const sinceValue = ccc.numFromBytes(
-      new Uint8Array([
-        0x80,
-        0x00,
-        0x00,
-        0x00, // Relative time lock flag
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-      ]),
-    ) + BigInt(seconds);
-    
-    console.log(`Generating seller signature with since value: ${sinceValue}`);
-    console.log(`Duration in seconds: ${seconds}`);
-    
+    const sinceValue =
+      ccc.numFromBytes(
+        new Uint8Array([
+          0x80,
+          0x00,
+          0x00,
+          0x00, // Relative time lock flag
+          0x00,
+          0x00,
+          0x00,
+          0x00,
+        ]),
+      ) + BigInt(seconds);
     const sellerSignature = generateCkbSecp256k1SignatureWithSince(
       sellerPrivateKey,
       messageHash,

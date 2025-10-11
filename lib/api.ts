@@ -28,6 +28,7 @@ interface ChannelCreateResponse {
     status: number;
     statusText: string;
     sellerSignature: string;
+    refundTx: unknown;
     fundingTx: unknown;
     amount: number;
     duration: number;
