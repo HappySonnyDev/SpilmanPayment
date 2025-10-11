@@ -2,6 +2,8 @@
  * Enhanced fetch wrapper with automatic error handling and response parsing
  */
 
+import { jsonStr } from "./ckb";
+
 export class APIError extends Error {
   constructor(
     message: string,
@@ -86,7 +88,7 @@ export async function apiGet<T = unknown>(url: string, headers?: Record<string, 
 export async function apiPost<T = unknown>(url: string, data?: unknown, headers?: Record<string, string>): Promise<T> {
   return apiFetch<T>(url, {
     method: 'POST',
-    body: data ? JSON.stringify(data) : undefined,
+    body: data ? jsonStr(data) : undefined,
     headers,
   });
 }

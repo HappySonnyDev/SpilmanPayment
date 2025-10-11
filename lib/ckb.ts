@@ -14,7 +14,9 @@ import dotenv from "dotenv";
 import { secp256k1 } from "@noble/curves/secp256k1";
 import scripts from "../deployment/scripts.json";
 dotenv.config({ quiet: true });
-export const buildClient = (network: "devnet" | "testnet" | "mainnet" = "devnet") => {
+export const buildClient = (
+  network: "devnet" | "testnet" | "mainnet" = "devnet",
+) => {
   switch (network) {
     case "devnet":
       return new ccc.ClientPublicTestnet({
@@ -37,7 +39,10 @@ export const buildClient = (network: "devnet" | "testnet" | "mainnet" = "devnet"
  * @param network - Network type (defaults to devnet)
  * @returns Object containing client and signer
  */
-export const buildClientAndSigner = (privateKey: string, network: "devnet" | "testnet" | "mainnet" = "devnet") => {
+export const buildClientAndSigner = (
+  privateKey: string,
+  network: "devnet" | "testnet" | "mainnet" = "devnet",
+) => {
   const client = buildClient(network);
   const signer = new ccc.SignerCkbPrivateKey(client, privateKey);
   return { client, signer };
@@ -73,10 +78,12 @@ export const derivePublicKeyHashByPrivateKey = (
  * @returns Public key as hex string (without '0x' prefix)
  */
 export const privateKeyToPublicKeyHex = (privateKey: string): string => {
-  const cleanPrivateKey = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey;
-  const privKeyBuffer = Buffer.from(cleanPrivateKey, 'hex');
+  const cleanPrivateKey = privateKey.startsWith("0x")
+    ? privateKey.slice(2)
+    : privateKey;
+  const privKeyBuffer = Buffer.from(cleanPrivateKey, "hex");
   const publicKey = secp256k1.getPublicKey(privKeyBuffer, false);
-  return Buffer.from(publicKey).toString('hex');
+  return Buffer.from(publicKey).toString("hex");
 };
 
 export const derivePublicKeyHashByPublicKeyUint8Array = (
@@ -153,13 +160,11 @@ export const createPaymentChannel = async ({
   amount: number;
   seconds: number;
 }) => {
-  const { client, signer: buyerSigner } = buildClientAndSigner(buyerPrivateKey);
+  const { signer: buyerSigner } = buildClientAndSigner(buyerPrivateKey);
   const CKB_AMOUNT = ccc.fixedPointFrom(amount);
   const {
     script: multisigScript,
     cellDeps,
-    buyerPubkeyHash,
-    sellerPubkeyHash,
   } = createMultisigScript(
     derivePublicKeyHashByPrivateKey(buyerPrivateKey),
     derivePublicKeyHashByPublicKey(sellerPublicKey),
@@ -173,23 +178,10 @@ export const createPaymentChannel = async ({
     ],
     cellDeps,
   });
-  // await fundingTx.completeInputsByCapacity(buyerSigner);
   await fundingTx.completeFeeBy(buyerSigner, 1400);
-  console.log(jsonStr(fundingTx), "fundingTx===========");
   const fundingTxHash = fundingTx.hash();
-  console.log(`📋 Funding transaction hash calculated: ${fundingTxHash}`);
-
-  // STEP 2: Create time-locked refund transaction
-  // This ensures buyer can recover funds if seller becomes uncooperative
-  console.log("📝 Step 2: Creating time-locked refund transaction...");
-
-  const currentTime = Math.floor(Date.now() / 1000);
   const DURATION_IN_SECONDS = seconds;
-  const refundTime = currentTime + DURATION_IN_SECONDS;
-  // Create basic refund transaction structure (server will add seller's fee input)
-  // This avoids timing conflicts when buyer's funding transaction goes on-chain
   const buyerAddress = await buyerSigner.getRecommendedAddressObj();
-  
   const refundTx = ccc.Transaction.from({
     inputs: [
       {
@@ -221,14 +213,8 @@ export const createPaymentChannel = async ({
     ],
     cellDeps,
   });
-  
-  console.log('✍️  Step 3: Creating basic refund transaction structure...');
-  console.log(`💰 Refund amount: ${CKB_AMOUNT} (full amount, seller pays fees)`);
-  console.log(`🏢 Server will add seller's fee inputs to complete transaction`);
-  const refundMessageHash = getMessageHashFromTx(refundTx.hash());
-  console.log(refundTx, "basic refundTx structure", jsonStr(refundTx));
 
-  // Return the refund transaction for API processing
+  const refundMessageHash = getMessageHashFromTx(refundTx.hash());
   return {
     refundTx,
     fundingTx,
@@ -338,7 +324,9 @@ export const createWitnessData = (
  * @param privateKey - Private key string
  * @returns Promise with address and balance information
  */
-export const generateCkbAddress = async (privateKey: string): Promise<{
+export const generateCkbAddress = async (
+  privateKey: string,
+): Promise<{
   address: string;
   balance: string;
 }> => {

@@ -19,6 +19,7 @@ import { generateCkbAddress } from "@/lib/ckb";
 
 interface AuthContextType {
   user: User | null;
+  privateKey: string | null;
   isLoading: boolean;
   ckbAddress: string | null;
   ckbBalance: string | null;
@@ -32,6 +33,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [privateKey, setPrivateKey] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [ckbAddress, setCkbAddress] = useState<string | null>(null);
   const [ckbBalance, setCkbBalance] = useState<string | null>(null);
@@ -50,6 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       if (!storedPrivateKey) {
         setUser(null);
+        setPrivateKey(null);
         setCkbAddress(null);
         setCkbBalance(null);
         return;
@@ -57,17 +60,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const userData = await getCurrentUser();
       if (userData) {
         setUser(userData);
+        setPrivateKey(storedPrivateKey);
         // Load CKB address after successful authentication
         loadCkbAddress(storedPrivateKey);
       } else {
         clearStoredCredentials();
         setUser(null);
+        setPrivateKey(null);
         setCkbAddress(null);
         setCkbBalance(null);
       }
     } catch {
       clearStoredCredentials();
       setUser(null);
+      setPrivateKey(null);
       setCkbAddress(null);
       setCkbBalance(null);
     } finally {
@@ -91,9 +97,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const refreshCkbAddress = async () => {
-    const storedPrivateKey = getStoredPrivateKey();
-    if (storedPrivateKey) {
-      await loadCkbAddress(storedPrivateKey);
+    if (privateKey) {
+      await loadCkbAddress(privateKey);
     }
   };
 
@@ -105,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("private_key", privateKey);
 
     setUser(userData);
+    setPrivateKey(privateKey);
     
     // Load CKB address after successful login
     loadCkbAddress(privateKey);
@@ -121,12 +127,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearStoredCredentials();
 
     setUser(null);
+    setPrivateKey(null);
     setCkbAddress(null);
     setCkbBalance(null);
   };
 
   const value = {
     user,
+    privateKey,
     isLoading,
     ckbAddress,
     ckbBalance,
