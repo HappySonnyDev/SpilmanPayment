@@ -1,23 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { AuthService, setAuthCookie } from "@/lib/auth";
+import { AuthService, setAuthCookie, validatePublicKey } from "@/lib/auth";
 
-// Utility function to validate public key format
-function validatePublicKey(publicKey: string): boolean {
-  try {
-    // Remove 0x prefix if present
-    const cleanKey = publicKey.startsWith("0x")
-      ? publicKey.slice(2)
-      : publicKey;
 
-    // Check if it's a valid hex string of correct length (130 characters = 65 bytes uncompressed)
-    // or 66 characters = 33 bytes compressed
-    return (
-      /^[0-9a-fA-F]{130}$/.test(cleanKey) || /^[0-9a-fA-F]{66}$/.test(cleanKey)
-    );
-  } catch {
-    return false;
-  }
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -35,7 +19,6 @@ export async function POST(request: NextRequest) {
           { status: 400 },
         );
       }
-
       const result = await authService.loginWithPublicKey(clientPublicKey);
       user = result.user;
       token = result.token;
@@ -57,13 +40,12 @@ export async function POST(request: NextRequest) {
     // Create response with user data (excluding password hash) including public key and seller address
     const userData = {
       id: user.id,
-      email: user.email,
-      username: user.username,
       created_at: user.created_at,
       is_active: Boolean(user.is_active), // Ensure boolean conversion from SQLite integer
       public_key: userPublicKey,
       seller_address: sellerAddress,
       serverPublicKey,
+            username: user.username,
       active_channel: activeChannel
         ? {
             channelId: activeChannel.channel_id,

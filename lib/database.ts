@@ -685,7 +685,7 @@ export interface CreateUserData {
 }
 
 // New user creation interface for private key authentication
-export interface CreateUserFromPrivateKey {
+export interface CreateUserFromPublicKey {
   username: string;
   public_key: string;
 }
@@ -742,7 +742,7 @@ export class UserRepository {
   }
 
   // New method for creating user from private key
-  async createUserFromPrivateKey(userData: CreateUserFromPrivateKey): Promise<User> {
+  async createUserFromPublicKey(userData: CreateUserFromPublicKey): Promise<User> {
     const { username, public_key } = userData;
     
     // Check if public key already exists

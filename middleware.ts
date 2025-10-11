@@ -2,23 +2,40 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { requireAuthMiddleware } from './lib/auth-middleware';
 
-// Define protected routes
+// Define routes that should be excluded from authentication
+const publicRoutes = [
+  '/api/auth/login',
+  '/api/auth/register', 
+  '/api/auth/me', // Allow /me to handle its own auth logic
+  '/api/auth/logout'
+];
+
+// Define protected routes that require authentication
 const protectedRoutes = [
   '/api/chat',
+  '/api/channel',
+  '/api/chunks',
+  '/api/session',
+  '/api/admin',
   '/dashboard',
   '/profile'
 ];
 
-// Since we now use modal auth, we don't need separate auth routes to redirect from
-
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Check if user is authenticated
-  const isAuthenticated = await requireAuthMiddleware(request);
+  // Skip authentication for public routes
+  if (publicRoutes.some(route => pathname.startsWith(route))) {
+    return NextResponse.next();
+  }
 
-  // Handle protected routes
-  if (protectedRoutes.some(route => pathname.startsWith(route))) {
+  // Check if this is a protected route
+  const isProtectedRoute = protectedRoutes.some(route => pathname.startsWith(route));
+  
+  if (isProtectedRoute) {
+    // Check if user is authenticated
+    const isAuthenticated = await requireAuthMiddleware(request);
+    
     if (!isAuthenticated) {
       // Redirect to home page for web routes (they will see the auth modal)
       if (!pathname.startsWith('/api/')) {

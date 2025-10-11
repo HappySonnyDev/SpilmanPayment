@@ -6,18 +6,32 @@ export async function GET(request: NextRequest) {
     const authService = new AuthService();
     let user = null;
 
-    // First try to get user from JWT token (legacy auth)
+    // First try to get user from JWT token (standard auth)
     user = await authService.getCurrentUser(request);
 
-    // If no JWT user, check for public key in request headers
+    // If no user found via standard auth, try to extract public key from JWT token
     if (!user) {
-      const publicKeyHeader = request.headers.get('x-public-key');
-      if (publicKeyHeader) {
-        // Find user by public key
-        const userRepo = new (await import('@/lib/database')).UserRepository();
-        user = userRepo.getUserByPublicKey(publicKeyHeader);
+      const token = request.cookies.get('auth-token')?.value;
+      if (token) {
+        // Get JWT payload to extract public key
+        const payload = await authService.verifyJWTTokenForPublicKey(token);
+        if (payload?.publicKey) {
+          // Find user by public key from JWT token
+          const userRepo = new (await import('@/lib/database')).UserRepository();
+          user = userRepo.getUserByPublicKey(payload.publicKey);
+        }
       }
     }
+
+    // Fallback: Check for public key in request headers (for backward compatibility)
+    // if (!user) {
+    //   const publicKeyHeader = request.headers.get('x-public-key');
+    //   if (publicKeyHeader) {
+    //     // Find user by public key
+    //     const userRepo = new (await import('@/lib/database')).UserRepository();
+    //     user = userRepo.getUserByPublicKey(publicKeyHeader);
+    //   }
+    // }
 
     if (!user) {
       return NextResponse.json(

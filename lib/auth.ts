@@ -1,55 +1,36 @@
-import 'server-only';
-
-import { SignJWT, jwtVerify } from 'jose';
-import { cookies } from 'next/headers';
-import { NextRequest } from 'next/server';
-import { UserRepository, SessionRepository, User, PaymentChannelRepository, PAYMENT_CHANNEL_STATUS } from './database';
-import { secp256k1 } from '@noble/curves/secp256k1';
+import "server-only";
+import { SignJWT, jwtVerify } from "jose";
+import { NextRequest } from "next/server";
+import {
+  UserRepository,
+  SessionRepository,
+  User,
+  PaymentChannelRepository,
+  PAYMENT_CHANNEL_STATUS,
+} from "./database";
 
 // Utility function to validate public key format
 function isValidPublicKey(publicKey: string): boolean {
   try {
     // Remove 0x prefix if present
-    const cleanKey = publicKey.startsWith('0x') ? publicKey.slice(2) : publicKey;
-    
+    const cleanKey = publicKey.startsWith("0x")
+      ? publicKey.slice(2)
+      : publicKey;
+
     // Check if it's a valid hex string of correct length (130 characters = 65 bytes uncompressed)
     // or 66 characters = 33 bytes compressed
-    return /^[0-9a-fA-F]{130}$/.test(cleanKey) || /^[0-9a-fA-F]{66}$/.test(cleanKey);
+    return (
+      /^[0-9a-fA-F]{130}$/.test(cleanKey) || /^[0-9a-fA-F]{66}$/.test(cleanKey)
+    );
   } catch {
     return false;
   }
-}
-
-// Utility function to validate private key format (kept for backward compatibility)
-function isValidPrivateKey(privateKey: string): boolean {
-  try {
-    // Remove 0x prefix if present
-    const cleanKey = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey;
-    
-    // Check if it's a valid hex string of correct length (64 characters = 32 bytes)
-    if (!/^[0-9a-fA-F]{64}$/.test(cleanKey)) {
-      return false;
-    }
-    
-    // Try to generate public key to validate the private key
-    const privKeyBuffer = Buffer.from(cleanKey, 'hex');
-    secp256k1.getPublicKey(privKeyBuffer, false);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// Utility function to generate public key from private key
-async function generatePublicKeyFromPrivateKey(privateKey: string): Promise<string> {
-  // Use the centralized utility function from ckb module
-  const { privateKeyToPublicKeyHex } = await import('./ckb');
-  return privateKeyToPublicKeyHex(privateKey);
 }
 
 // JWT secret - in production, use a strong secret from environment variables
 const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production'
+  process.env.JWT_SECRET ||
+    "your-super-secret-jwt-key-change-this-in-production",
 );
 const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 
@@ -75,31 +56,31 @@ export class AuthService {
   private async generatePublicKey(): Promise<string> {
     const privateKey = process.env.SELLER_PRIVATE_KEY;
     if (!privateKey) {
-      throw new Error('SELLER_PRIVATE_KEY not found in environment variables');
+      throw new Error("SELLER_PRIVATE_KEY not found in environment variables");
     }
-    
+
     // Use the centralized utility function from ckb module
-    const { privateKeyToPublicKeyHex } = await import('./ckb');
+    const { privateKeyToPublicKeyHex } = await import("./ckb");
     return privateKeyToPublicKeyHex(privateKey);
   }
 
   // Generate seller address from server private key
   private async generateSellerAddress(): Promise<string> {
-    const { ccc } = await import('@ckb-ccc/core');
-    const { DEVNET_SCRIPTS } = await import('./ckb');
-    
+    const { ccc } = await import("@ckb-ccc/core");
+    const { DEVNET_SCRIPTS } = await import("./ckb");
+
     const privateKey = process.env.SELLER_PRIVATE_KEY;
     if (!privateKey) {
-      throw new Error('SELLER_PRIVATE_KEY not found in environment variables');
+      throw new Error("SELLER_PRIVATE_KEY not found in environment variables");
     }
-    
+
     const client = new ccc.ClientPublicTestnet({
       url: "http://localhost:28114",
       scripts: DEVNET_SCRIPTS,
     });
     const sellerSigner = new ccc.SignerCkbPrivateKey(client, privateKey);
     const sellerAddress = await sellerSigner.getRecommendedAddress();
-    
+
     return sellerAddress;
   }
 
@@ -116,7 +97,9 @@ export class AuthService {
   // Get user's active payment channel
   getActivePaymentChannel(userId: number) {
     const channels = this.channelRepo.getPaymentChannelsByUserId(userId);
-    return channels.find(channel => channel.status === PAYMENT_CHANNEL_STATUS.ACTIVE);
+    return channels.find(
+      (channel) => channel.status === PAYMENT_CHANNEL_STATUS.ACTIVE,
+    );
   }
 
   // Generate session ID
@@ -127,8 +110,8 @@ export class AuthService {
   // Create JWT token
   private async createJWTToken(payload: JWTPayload): Promise<string> {
     return await new SignJWT(payload as unknown as Record<string, unknown>)
-      .setProtectedHeader({ alg: 'HS256' })
-      .setExpirationTime('7d')
+      .setProtectedHeader({ alg: "HS256" })
+      .setExpirationTime("7d")
       .sign(JWT_SECRET);
   }
 
@@ -142,49 +125,18 @@ export class AuthService {
     }
   }
 
-  // Legacy login method (for backward compatibility)
-  async login(emailOrUsername: string, password: string): Promise<{ user: User; token: string }> {
-    // Try to find user by email first, then by username
-    let user = this.userRepo.getUserByEmail(emailOrUsername);
-    if (!user) {
-      user = this.userRepo.getUserByUsername(emailOrUsername);
-    }
-
-    if (!user) {
-      throw new Error('Invalid credentials');
-    }
-
-    // Verify password
-    const isValidPassword = await this.userRepo.verifyPassword(user, password);
-    if (!isValidPassword) {
-      throw new Error('Invalid credentials');
-    }
-
-    // Update last login
-    this.userRepo.updateLastLogin(user.id);
-
-    // Create new session
-    const sessionId = this.generateSessionId();
-    const expiresAt = new Date(Date.now() + SESSION_DURATION);
-    this.sessionRepo.createSession(user.id, sessionId, expiresAt);
-
-    // Create JWT token
-    const tokenPayload: JWTPayload = {
-      userId: user.id,
-      username: user.username,
-      publicKey: user.public_key || undefined, // Handle null public_key
-      sessionId
-    };
-    const token = await this.createJWTToken(tokenPayload);
-
-    return { user, token };
+  // Public method to verify JWT token and extract payload (for public key lookup)
+  async verifyJWTTokenForPublicKey(token: string): Promise<JWTPayload | null> {
+    return this.verifyJWTToken(token);
   }
 
   // Authenticate user with public key (secure method - private key never transmitted)
-  async loginWithPublicKey(publicKey: string): Promise<{ user: User; token: string }> {
+  async loginWithPublicKey(
+    publicKey: string,
+  ): Promise<{ user: User; token: string }> {
     // Validate public key format
     if (!isValidPublicKey(publicKey)) {
-      throw new Error('Invalid public key format');
+      throw new Error("Invalid public key format");
     }
 
     // Try to find user by public key
@@ -194,7 +146,7 @@ export class AuthService {
       // Auto-create user with public key if not exists
       // Generate a more unique username using more characters from public key
       let username = `user_${publicKey.slice(0, 12)}`; // Use 12 characters for better uniqueness
-      
+
       // Check if username already exists and add suffix if needed
       let counter = 1;
       const originalUsername = username;
@@ -202,8 +154,11 @@ export class AuthService {
         username = `${originalUsername}_${counter}`;
         counter++;
       }
-      
-      user = await this.userRepo.createUserFromPrivateKey({ username, public_key: publicKey });
+
+      user = await this.userRepo.createUserFromPublicKey({
+        username,
+        public_key: publicKey,
+      });
     }
 
     // Update last login
@@ -219,7 +174,7 @@ export class AuthService {
       userId: user.id,
       username: user.username,
       publicKey: publicKey,
-      sessionId
+      sessionId,
     };
     const token = await this.createJWTToken(tokenPayload);
 
@@ -254,7 +209,7 @@ export class AuthService {
 
   // Get current user from request
   async getCurrentUser(request: NextRequest): Promise<User | null> {
-    const token = request.cookies.get('auth-token')?.value;
+    const token = request.cookies.get("auth-token")?.value;
     if (!token) {
       return null;
     }
@@ -262,21 +217,7 @@ export class AuthService {
     return this.verifyAuth(token);
   }
 
-  // Get current user from server-side cookies
-  async getCurrentUserFromCookies(): Promise<User | null> {
-    const cookieStore = await cookies();
-    const token = cookieStore.get('auth-token')?.value;
-    if (!token) {
-      return null;
-    }
-
-    return this.verifyAuth(token);
-  }
-
-  // Clean up expired sessions
-  cleanupExpiredSessions(): void {
-    this.sessionRepo.deleteExpiredSessions();
-  }
+  
 }
 
 // Utility functions for authentication
@@ -286,18 +227,18 @@ export function setAuthCookie(token: string): string {
 }
 
 export function clearAuthCookie(): string {
-  return 'auth-token=; HttpOnly; Secure; SameSite=Strict; Max-Age=0; Path=/';
+  return "auth-token=; HttpOnly; Secure; SameSite=Strict; Max-Age=0; Path=/";
 }
 
 // Server-side helper (Node.js Runtime)
 export async function requireAuth(request: NextRequest): Promise<User> {
   const authService = new AuthService();
   const user = await authService.getCurrentUser(request);
-  
+
   if (!user) {
-    throw new Error('Authentication required');
+    throw new Error("Authentication required");
   }
-  
+
   return user;
 }
 

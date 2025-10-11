@@ -57,26 +57,15 @@ export async function logoutUser(): Promise<void> {
 
 export async function getCurrentUser(): Promise<User | null> {
   try {
-    const headers: Record<string, string> = {};
-    
-    // If we have a private key in localStorage, generate public key locally and send that
-    // (private key never leaves the client for security)
+    // Check if there's a private key in localStorage (for authentication state)
     const privateKey = getStoredPrivateKey();
-    if (privateKey) {
-      try {
-        // Import utility function to convert private key to public key
-        const { privateKeyToPublicKeyHex } = await import('@/lib/ckb');
-        const publicKeyHex = privateKeyToPublicKeyHex(privateKey);
-        
-        headers['x-public-key'] = publicKeyHex;
-      } catch (error) {
-        console.error('Error generating public key:', error);
-        return null;
-      }
+    if (!privateKey) {
+      return null;
     }
     
+    // Call /api/auth/me - it will extract publicKey from JWT token automatically
     const { auth } = await import('@/lib/api');
-    const response = await auth.me(headers);
+    const response = await auth.me();
     return response.user;
   } catch {
     return null;
