@@ -14,7 +14,7 @@ import dotenv from "dotenv";
 import { secp256k1 } from "@noble/curves/secp256k1";
 import scripts from "../deployment/scripts.json";
 dotenv.config({ quiet: true });
-export const buildClient = (network: "devnet" | "testnet" | "mainnet") => {
+export const buildClient = (network: "devnet" | "testnet" | "mainnet" = "devnet") => {
   switch (network) {
     case "devnet":
       return new ccc.ClientPublicTestnet({
@@ -29,6 +29,18 @@ export const buildClient = (network: "devnet" | "testnet" | "mainnet") => {
     default:
       throw new Error(`Unsupported network: ${network}`);
   }
+};
+
+/**
+ * Build CKB client and signer for a given private key
+ * @param privateKey - Private key string
+ * @param network - Network type (defaults to devnet)
+ * @returns Object containing client and signer
+ */
+export const buildClientAndSigner = (privateKey: string, network: "devnet" | "testnet" | "mainnet" = "devnet") => {
+  const client = buildClient(network);
+  const signer = new ccc.SignerCkbPrivateKey(client, privateKey);
+  return { client, signer };
 };
 export type KnownScriptType = Pick<Script, "codeHash" | "hashType"> & {
   cellDeps: CellDepInfoLike[];
@@ -141,8 +153,7 @@ export const createPaymentChannel = async ({
   amount: number;
   seconds: number;
 }) => {
-  const client = buildClient("devnet");
-  const buyerSigner = new ccc.SignerCkbPrivateKey(client, buyerPrivateKey);
+  const { client, signer: buyerSigner } = buildClientAndSigner(buyerPrivateKey);
   const CKB_AMOUNT = ccc.fixedPointFrom(amount);
   const {
     script: multisigScript,
@@ -320,4 +331,30 @@ export const createWitnessData = (
   witnessData[130] = 0; // buyer pubkey index
   witnessData[131] = 1; // seller pubkey index
   return witnessData;
+};
+
+/**
+ * Generate CKB address and balance from private key
+ * @param privateKey - Private key string
+ * @returns Promise with address and balance information
+ */
+export const generateCkbAddress = async (privateKey: string): Promise<{
+  address: string;
+  balance: string;
+}> => {
+  const { client, signer } = buildClientAndSigner(privateKey);
+
+  // Get recommended address
+  const address = await signer.getRecommendedAddress();
+
+  // Get balance
+  const addressObj = await ccc.Address.fromString(address, client);
+  const script = addressObj.script;
+  const balanceBI = await client.getBalance([script]);
+  const balance = ccc.fixedPointToString(balanceBI);
+
+  return {
+    address,
+    balance,
+  };
 };
