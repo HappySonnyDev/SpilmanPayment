@@ -343,7 +343,7 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
                 transactionData: result.transactionData ? (result.transactionData as unknown as Record<string, unknown>) : undefined,
                 // Keep the original consumedTokens - don't overwrite with current channel total
                 // consumedTokens: record.consumedTokens, // Preserve original cumulative value
-                remainingTokens: result.remainingTokens
+                remainingTokens: Math.floor(result.remainingTokens * 0.01) // Convert CKB to tokens
               }
             : record
         )
