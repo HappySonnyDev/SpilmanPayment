@@ -48,6 +48,11 @@ next-env.d.ts
 *.sqlite-wal
 *.db-shm
 *.db-wal
-database.*
+# SQLite database files
+database.sqlite
+database.sqlite3
+database.sqlite-shm
+database.sqlite-wal
+database.db
 
 test2/
