@@ -48,7 +48,7 @@ export const Assistant = () => {
       };
       const { chunkId, tokens, cumulativePayment, remainingBalance, channelId, channelTotalAmount } = data;
       
-      console.log(`📦 Processing chunk payment: ${chunkId} (${tokens} tokens)`);
+      console.log(`📦 Processing chunk arrival: ${chunkId} (${tokens} tokens)`);
       console.log(`💰 Payment Channel Status:`);
       console.log(`   - Channel ID: ${channelId}`);
       console.log(`   - Total Amount: ${channelTotalAmount} CKB`);
@@ -68,55 +68,20 @@ export const Assistant = () => {
       });
       window.dispatchEvent(tokenUpdateEvent);
       
-      try {
-        console.log(`🔄 Attempting automatic payment for chunk: ${chunkId}`);
-        // Automatically pay for the chunk with enhanced payment info
-        const paymentResult = await payForChunk(chunkId, {
+      // Emit newChunkArrived event for chunk-aware-composer to handle
+      const newChunkEvent = new CustomEvent('newChunkArrived', {
+        detail: {
+          chunkId,
+          tokens,
+          timestamp: new Date().toISOString(),
           cumulativePayment,
           remainingBalance,
-          channelId,
-          tokens
-        });
-        console.log(`✅ Successfully paid for chunk: ${chunkId}`);
-        
-        // Emit payment success event for the composer to update payment records
-        const paymentSuccessEvent = new CustomEvent('chunkPaymentSuccess', {
-          detail: {
-            chunkId,
-            tokens,
-            paidAmount: cumulativePayment,
-            remainingAmount: remainingBalance,
-            timestamp: new Date().toISOString(),
-            transactionData: paymentResult.transactionData
-          }
-        });
-        window.dispatchEvent(paymentSuccessEvent);
-        
-      } catch (error) {
-        console.error(`❌ Failed to pay for chunk ${chunkId}:`, error);
-        // Let's try the simpler payment method as fallback
-        try {
-          console.log(`🔄 Trying fallback payment for chunk: ${chunkId}`);
-          const fallbackResult = await payForChunk(chunkId);
-          console.log(`✅ Fallback payment successful for chunk: ${chunkId}`);
-          
-          // Emit payment success event for fallback payment too
-          const paymentSuccessEvent = new CustomEvent('chunkPaymentSuccess', {
-            detail: {
-              chunkId,
-              tokens,
-              paidAmount: cumulativePayment,
-              remainingAmount: remainingBalance,
-              timestamp: new Date().toISOString(),
-              transactionData: fallbackResult.transactionData
-            }
-          });
-          window.dispatchEvent(paymentSuccessEvent);
-          
-        } catch (fallbackError) {
-          console.error(`❌ Fallback payment also failed for chunk ${chunkId}:`, fallbackError);
+          channelId
         }
-      }
+      });
+      window.dispatchEvent(newChunkEvent);
+      
+      console.log(`🆕 Emitted newChunkArrived event for chunk: ${chunkId}`);
     }
   };
 

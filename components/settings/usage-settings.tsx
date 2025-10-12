@@ -100,9 +100,37 @@ export const UsageSettings: React.FC = () => {
   };
 
   const handlePayForChunk = async (chunkId: string) => {
+    if (!latestChunk || !selectedChannel) {
+      alert('Missing chunk or channel information');
+      return;
+    }
+
     try {
-      const result = await payForChunk(chunkId);
+      // Calculate enhanced payment info similar to chunk-aware-composer
+      const cumulativePayment = latestChunk.consumedTokens * 100; // Convert tokens to CKB
+      const remainingBalance = latestChunk.remainingTokens * 100; // Convert tokens to CKB
+      
+      const result = await payForChunk(chunkId, {
+        cumulativePayment,
+        remainingBalance,
+        channelId: selectedChannel.channelId,
+        tokens: latestChunk.tokens
+      });
+      
       console.log(`✅ Successfully paid for chunk: ${chunkId} (${result.tokens} tokens)`);
+      
+      // Emit chunkPaymentSuccess event to notify Payment History
+      const chunkPaymentSuccessEvent = new CustomEvent('chunkPaymentSuccess', {
+        detail: {
+          chunkId,
+          tokens: latestChunk.tokens,
+          paidAmount: cumulativePayment,
+          remainingAmount: remainingBalance,
+          timestamp: new Date().toISOString(),
+          transactionData: result.transactionData
+        }
+      });
+      window.dispatchEvent(chunkPaymentSuccessEvent);
       
       // Refresh the latest chunk data after payment
       if (selectedChannelId) {
@@ -445,9 +473,9 @@ export const UsageSettings: React.FC = () => {
                   <div className="flex justify-end pt-2">
                     <Button
                       onClick={() => handlePayForChunk(latestChunk.chunkId)}
-                      size="sm"
+                      size="lg"
                       variant="default"
-                      className="bg-orange-600 hover:bg-orange-700 text-white"
+                      className="bg-slate-900 px-8 py-6 text-xl font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-700 dark:hover:bg-slate-600"
                       disabled={isProcessing}
                     >
                       {isProcessing ? (
@@ -456,7 +484,7 @@ export const UsageSettings: React.FC = () => {
                           Processing...
                         </>
                       ) : (
-                        'Pay Now'
+                        'Pay'
                       )}
                     </Button>
                   </div>

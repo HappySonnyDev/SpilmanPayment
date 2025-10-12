@@ -47,78 +47,13 @@ export const TokenAwareComposer: React.FC<TokenAwareComposerProps> = ({
 }) => {
   const { user } = useAuth();
   const composerRuntime = useComposerRuntime();
-  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
-  const [unpaidData, setUnpaidData] = useState<UnpaidChunksData | null>(null);
   const [isCheckingPayment, setIsCheckingPayment] = useState(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+  const [unpaidData, setUnpaidData] = useState<UnpaidChunksData | null>(null);
 
-  const checkUnpaidChunks = async (): Promise<boolean> => {
-    if (!user) return true; // Will be handled by auth
-
-    try {
-      setIsCheckingPayment(true);
-      // Check all unpaid chunks for this user (across all sessions)
-      const response = await fetch(`/api/chunks/check-all`);
-
-      if (!response.ok) {
-        throw new Error("Failed to check payment status");
-      }
-
-      const result = await response.json();
-      const data: UnpaidChunksData = result.data;
-
-      if (data.unpaidTokens > 0 && !data.canProceed) {
-        setUnpaidData(data);
-        setShowPaymentDialog(true);
-        return false;
-      }
-
-      return true;
-    } catch (error) {
-      console.error("Error checking unpaid chunks:", error);
-      return true; // Allow to proceed if check fails
-    } finally {
-      setIsCheckingPayment(false);
-    }
-  };
-
-  const handlePayment = async () => {
-    if (!unpaidData) return;
-
-    try {
-      setIsProcessingPayment(true);
-
-      const response = await fetch("/api/chunks/pay-all", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          action: "pay",
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Payment failed");
-      }
-
-      setShowPaymentDialog(false);
-      setUnpaidData(null);
-
-      // Allow the message to be sent now
-      return true;
-    } catch (error) {
-      console.error("Payment error:", error);
-      alert(
-        "Payment failed: " +
-          (error instanceof Error ? error.message : "Unknown error"),
-      );
-      return false;
-    } finally {
-      setIsProcessingPayment(false);
-    }
-  };
+  // Note: Removed checkUnpaidChunks and handlePayment functions 
+  // as we now use direct chunk-level payment instead of bulk payment operations
 
   // Custom send handler that checks payment first
   const handleSend = async () => {
@@ -136,8 +71,9 @@ export const TokenAwareComposer: React.FC<TokenAwareComposerProps> = ({
     // Generate new session ID for this question
     const newSessionId = onNewQuestion();
 
-    // Check for unpaid chunks from previous sessions
-    const canProceed = await checkUnpaidChunks();
+    // Note: Removed unpaid chunks check as we now use direct chunk-level payment
+    // Allow all messages to proceed
+    const canProceed = true;
     if (!canProceed) {
       return; // Payment dialog will be shown
     }
@@ -200,93 +136,7 @@ export const TokenAwareComposer: React.FC<TokenAwareComposerProps> = ({
         </div>
       </ComposerPrimitive.Root>
 
-      {/* Payment Dialog */}
-      {showPaymentDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="relative w-full max-w-md rounded-lg border bg-background p-6 shadow-lg">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="flex items-center gap-2 text-lg font-semibold">
-                <AlertTriangle className="h-5 w-5 text-orange-500" />
-                Payment Required
-              </h3>
-              <button
-                onClick={() => setShowPaymentDialog(false)}
-                disabled={isProcessingPayment}
-                className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="mb-6 space-y-3">
-              <p className="text-sm text-muted-foreground">
-                You have unpaid tokens from previous messages that need to be
-                paid before sending a new message.
-              </p>
-
-              {unpaidData && (
-                <div className="rounded-lg border bg-slate-50 p-4 dark:bg-slate-800">
-                  <div className="mb-3 flex items-center gap-2">
-                    <Coins className="h-4 w-4 text-blue-500" />
-                    <span className="text-sm font-medium">Payment Details</span>
-                  </div>
-
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">
-                        Unpaid Chunks:
-                      </span>
-                      <span className="font-medium">
-                        {unpaidData.unpaidChunks}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">
-                        Unpaid Tokens:
-                      </span>
-                      <span className="font-medium">
-                        {unpaidData.unpaidTokens.toLocaleString()}
-                      </span>
-                    </div>
-                    {unpaidData.defaultChannel && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">
-                          Available Tokens:
-                        </span>
-                        <span className="font-medium">
-                          {unpaidData.defaultChannel.remainingTokens.toLocaleString()}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <p className="text-sm text-muted-foreground">
-                Click &ldquo;Pay Now&rdquo; to deduct tokens from your default
-                channel and continue chatting.
-              </p>
-            </div>
-
-            <div className="flex justify-end gap-3">
-              <Button
-                variant="outline"
-                onClick={() => setShowPaymentDialog(false)}
-                disabled={isProcessingPayment}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handlePayment}
-                disabled={isProcessingPayment}
-                className="bg-blue-600 hover:bg-blue-700"
-              >
-                {isProcessingPayment ? "Processing..." : "Pay Now"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Note: Payment dialog removed as we now use direct chunk-level payment */}
     </>
   );
 };

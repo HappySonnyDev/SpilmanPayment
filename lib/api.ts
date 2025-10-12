@@ -161,32 +161,13 @@ export const session = {
 // Chunks API
 export const chunks = {
   /**
-   * Check all chunks
-   */
-  async checkAll(): Promise<unknown> {
-    return apiPost('/api/chunks/check-all');
-  },
-
-  /**
-   * Pay for all chunks
-   */
-  async payAll(data: unknown): Promise<unknown> {
-    return apiPost('/api/chunks/pay-all', data);
-  },
-
-  /**
    * Enhanced chunk payment
    */
   async payEnhanced(data: unknown): Promise<unknown> {
     return apiPost('/api/chunks/pay-enhanced', data);
   },
 
-  /**
-   * Pay for single chunk
-   */
-  async paySingle(data: unknown): Promise<unknown> {
-    return apiPost('/api/chunks/pay-single', data);
-  },
+
 
   /**
    * Get chunks

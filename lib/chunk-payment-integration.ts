@@ -67,21 +67,10 @@ export class ChunkPaymentService {
 
   async payForChunk(chunkId: string): Promise<void> {
     try {
-      const response = await fetch('/api/chunks/pay-single', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chunkId }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Payment failed');
-      }
-
-      this.paymentHistory.push({ chunkId, success: true });
-      this.paymentQueue.delete(chunkId);
+      // Note: Enhanced payment is now handled directly in the chunk-aware-composer
+      // This method is kept for compatibility but should use the enhanced payment flow
+      throw new Error('Direct chunk payment not supported. Use enhanced payment flow in chunk-aware-composer.');
       
-      console.log(`✅ Successfully paid for chunk: ${chunkId}`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       this.paymentHistory.push({ chunkId, success: false, error: errorMessage });
@@ -119,14 +108,5 @@ export class ChunkPaymentService {
     return this.autoPayEnabled;
   }
 
-  async payAllPending(): Promise<void> {
-    const pending = this.getPendingPayments();
-    const promises = pending.map(chunk => this.payForChunk(chunk.chunkId));
-    
-    try {
-      await Promise.allSettled(promises);
-    } catch (error) {
-      console.error('Some payments failed during batch payment:', error);
-    }
-  }
+  // Note: Removed payAllPending method as we now use direct chunk-level payment
 }

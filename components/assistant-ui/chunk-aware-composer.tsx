@@ -3,14 +3,14 @@ import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button
 import { ComposerAddAttachment, ComposerAttachments } from "@/components/assistant-ui/attachment";
 import { useAuth } from '@/app/context/auth-context';
 import { useChunkPayment } from '@/hooks/use-chunk-payment';
-import { AlertTriangle, Coins, X, ArrowUpIcon, Square, Check, Loader2, Eye } from "lucide-react";
+import { Coins, X, ArrowUpIcon, Square, Check, Loader2, Eye } from "lucide-react";
 import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ComposerPrimitive,
   ThreadPrimitive,
   useComposerRuntime,
-  useAssistantRuntime
+  useThreadRuntime
 } from '@assistant-ui/react';
 
 interface ChunkPaymentData {
@@ -27,8 +27,6 @@ interface StreamDataPart {
 
 interface ChunkAwareComposerProps {
   onAuthRequired: () => void;
-  pendingMessage: string;
-  setPendingMessage: (message: string) => void;
   onNewQuestion: () => string;
 }
 
@@ -55,10 +53,11 @@ interface PaymentChannel {
 interface PaymentRecord {
   chunkId: string;
   tokens: number;
-  consumedTokens: number;
-  remainingTokens: number;
+  consumedTokens: number; // Cumulative tokens consumed (converted from CKB)
+  remainingTokens: number; // Remaining tokens in channel (converted from CKB)
   timestamp: string;
   isPaid?: boolean; // Add isPaid field to track payment status
+  isPaying?: boolean; // Add isPaying field to track loading state
   transactionData?: Record<string, unknown>;
 }
 
@@ -72,65 +71,79 @@ interface PaymentChannelInfo {
 
 export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
   onAuthRequired,
-  pendingMessage,
-  setPendingMessage,
   onNewQuestion
 }) => {
   const { user } = useAuth();
   const composerRuntime = useComposerRuntime();
-  const assistantRuntime = useAssistantRuntime();
+  const threadRuntime = useThreadRuntime();
   const { payForChunk, isProcessing } = useChunkPayment();
   
   // Chunk payment state
-  const [chunkPayments, setChunkPayments] = useState<ChunkPaymentStatus[]>([]);
   const [autoPayEnabled, setAutoPayEnabled] = useState(true);
-  const [totalPendingTokens, setTotalPendingTokens] = useState(0);
+  const [autoPayUserSetting, setAutoPayUserSetting] = useState(true); // User's preference
   const [isStreamingActive, setIsStreamingActive] = useState(false);
+  const [hasStreamingStarted, setHasStreamingStarted] = useState(false); // Track if streaming has actually started
   const [paymentChannelInfo, setPaymentChannelInfo] = useState<PaymentChannelInfo | null>(null);
   const [paymentRecords, setPaymentRecords] = useState<PaymentRecord[]>([]);
   const [selectedRecord, setSelectedRecord] = useState<PaymentRecord | null>(null);
+  const [currentlyPayingChunks, setCurrentlyPayingChunks] = useState<Set<string>>(new Set()); // Track which chunks are currently being paid
+  const [showPaymentModal, setShowPaymentModal] = useState(false); // For pre-send payment check modal
+  const [isDataLoading, setIsDataLoading] = useState(true); // Track if payment data is still loading
 
-  // Check for recent unpaid chunks and pay for them automatically  
-  const checkAndPayRecentChunks = useCallback(async () => {
-    if (!user || !autoPayEnabled) return;
-    
+  // Handle automatic payment for a chunk with enhanced payment info
+  const handlePayForChunkWithEnhancedInfo = useCallback(async (chunkId: string, paymentInfo: {
+    cumulativePayment: number;
+    remainingBalance: number;
+    channelId: string;
+    tokens: number;
+  }) => {
     try {
-      // Get all unpaid chunks for this user
-      const response = await fetch('/api/chunks/check-all', {
-        credentials: 'include'
+      const result = await payForChunk(chunkId, paymentInfo);
+      
+      // Remove from paying state
+      setCurrentlyPayingChunks(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(chunkId);
+        return newSet;
       });
       
-      if (response.ok) {
-        const result = await response.json();
-        const unpaidTokens = result.data.unpaidTokens;
-        
-        if (unpaidTokens > 0) {
-          console.log(`🔄 Found ${unpaidTokens} unpaid tokens, auto-paying...`);
-          
-          // Pay all unpaid chunks
-          const payResponse = await fetch('/api/chunks/pay-all', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ action: 'pay' }),
-            credentials: 'include',
-          });
-          
-          if (payResponse.ok) {
-            const payResult = await payResponse.json();
-            console.log(`✅ Successfully paid for ${payResult.data.paidTokens} tokens`);
-            
-            // Update UI to show payment completion
-            setChunkPayments([]);
-            setTotalPendingTokens(0);
-          }
-        }
-      }
+      // Update payment record to paid
+      setPaymentRecords(prev => 
+        prev.map(record => 
+          record.chunkId === chunkId 
+            ? { 
+                ...record, 
+                isPaid: true, 
+                isPaying: false,
+                transactionData: result.transactionData ? (result.transactionData as unknown as Record<string, unknown>) : undefined,
+                // Keep the original consumedTokens - don't overwrite with current channel total
+                // consumedTokens: record.consumedTokens, // Preserve original cumulative value
+                remainingTokens: Math.floor(paymentInfo.remainingBalance * 0.01)
+              }
+            : record
+        )
+      );
+      
+      console.log(`✅ Successfully auto-paid for chunk: ${chunkId} (${paymentInfo.tokens} tokens)`);
     } catch (error) {
-      console.error('Error checking and paying for chunks:', error);
+      // Remove from paying state and mark as failed
+      setCurrentlyPayingChunks(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(chunkId);
+        return newSet;
+      });
+      
+      setPaymentRecords(prev => 
+        prev.map(record => 
+          record.chunkId === chunkId 
+            ? { ...record, isPaying: false }
+            : record
+        )
+      );
+      
+      console.error(`❌ Auto-payment failed for chunk ${chunkId}:`, error);
     }
-  }, [user, autoPayEnabled]);
+  }, [payForChunk, paymentChannelInfo?.consumedTokens]);
 
   // Fetch current payment channel data and latest chunk on component mount
   useEffect(() => {
@@ -180,17 +193,29 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
                   remainingTokens: latestChunk.remainingTokens,
                   timestamp: latestChunk.timestamp,
                   transactionData: latestChunk.transactionData,
-                  isPaid: latestChunk.isPaid
+                  isPaid: latestChunk.isPaid,
+                  isPaying: false
                 };
                 
                 setPaymentRecords([initialRecord]);
                 console.log('📝 Loaded latest chunk record:', latestChunk.chunkId, 'isPaid:', latestChunk.isPaid);
+              } else {
+                console.log('📝 No latest chunk found');
               }
+            } else {
+              console.log('📝 Failed to fetch latest chunk');
             }
+          } else {
+            console.log('📝 No default channel found');
           }
+        } else {
+          console.log('📝 Failed to fetch channel list');
         }
       } catch (error) {
         console.error('Failed to fetch channel data or latest chunk:', error);
+      } finally {
+        // Mark data loading as complete
+        setIsDataLoading(false);
       }
     };
     
@@ -199,19 +224,24 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
 
   // Simple fallback check for any missed chunks
   useEffect(() => {
-    if (user && autoPayEnabled && !isStreamingActive) {
-      const timeoutId = setTimeout(() => {
-        checkAndPayRecentChunks();
-      }, 2000); // Check 2 seconds after streaming stops
-      
-      return () => clearTimeout(timeoutId);
-    }
-  }, [user, autoPayEnabled, isStreamingActive, checkAndPayRecentChunks]);
+    // Note: Removed automatic chunk payment check as we now use direct chunk-level payment
+    // This effect is kept for potential future use
+  }, [user, autoPayEnabled, isStreamingActive]);
 
   // Listen for payment channel info from streaming data
   useEffect(() => {
+    console.log('🎧 Setting up event listeners for payment events');
+    
     const handlePaymentChannelData = (event: CustomEvent) => {
       const { tokens, cumulativePayment, remainingBalance, channelId, channelTotalAmount } = event.detail;
+      
+      console.log('📡 Received tokenStreamUpdate event:', {
+        tokens,
+        cumulativePayment,
+        remainingBalance,
+        channelId,
+        channelTotalAmount
+      });
       
       // Convert CKB amounts to tokens for display
       const totalTokens = Math.floor(channelTotalAmount * 0.01);
@@ -231,6 +261,21 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
     const handleChunkPaymentSuccess = (event: CustomEvent) => {
       const { chunkId, tokens, paidAmount, remainingAmount, timestamp, transactionData } = event.detail;
       
+      console.log('🎉 Received chunkPaymentSuccess event:', {
+        chunkId,
+        tokens,
+        paidAmount,
+        remainingAmount,
+        timestamp
+      });
+      
+      // Remove from paying state
+      setCurrentlyPayingChunks(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(chunkId);
+        return newSet;
+      });
+      
       const paymentRecord: PaymentRecord = {
         chunkId,
         tokens,
@@ -238,112 +283,182 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
         remainingTokens: Math.floor(remainingAmount * 0.01),
         timestamp,
         isPaid: true, // Mark as paid since this is a payment success event
+        isPaying: false,
         transactionData
       };
       
-      setPaymentRecords(prev => [paymentRecord, ...prev]); // Add to front of list
-      console.log('📝 Added payment record for chunk:', chunkId);
+      // Update existing record or add new one
+      setPaymentRecords(prev => {
+        const existingIndex = prev.findIndex(record => record.chunkId === chunkId);
+        if (existingIndex >= 0) {
+          // Update existing record
+          const updated = [...prev];
+          updated[existingIndex] = paymentRecord;
+          console.log('📝 Updated existing payment record for chunk:', chunkId);
+          return updated;
+        } else {
+          // Add new record to front of list
+          console.log('📝 Added new payment record for chunk:', chunkId);
+          return [paymentRecord, ...prev];
+        }
+      });
+    };
+
+    // Listen for new chunks arriving from streaming (text-delta)
+    const handleNewChunkArrived = (event: CustomEvent) => {
+      const { chunkId, tokens, timestamp, cumulativePayment, remainingBalance, channelId } = event.detail;
+      
+      console.log('🆕 Received newChunkArrived event:', {
+        chunkId,
+        tokens,
+        timestamp,
+        cumulativePayment,
+        remainingBalance,
+        channelId
+      });
+      
+      // Create unpaid record immediately
+      const newRecord: PaymentRecord = {
+        chunkId,
+        tokens,
+        consumedTokens: Math.floor(cumulativePayment * 0.01), // Convert CKB to tokens
+        remainingTokens: Math.floor(remainingBalance * 0.01), // Convert CKB to tokens
+        timestamp: timestamp || new Date().toISOString(),
+        isPaid: false, // Initially unpaid
+        isPaying: false,
+      };
+      
+      console.log('📝 Creating new payment record with values:');
+      console.log('  - chunkId:', chunkId);
+      console.log('  - tokens:', tokens);
+      console.log('  - cumulativePayment (CKB):', cumulativePayment);
+      console.log('  - consumedTokens (converted):', newRecord.consumedTokens);
+      console.log('  - remainingBalance (CKB):', remainingBalance);
+      console.log('  - remainingTokens (converted):', newRecord.remainingTokens);
+      console.log('📝 Full payment record:', newRecord);
+      
+      // Add to payment records immediately
+      setPaymentRecords(prev => {
+        const updated = [newRecord, ...prev];
+        console.log('📋 Updated payment records list, now has', updated.length, 'records');
+        return updated;
+      });
+      
+      // If Auto Pay is enabled and not streaming ended yet, pay immediately
+      if (autoPayUserSetting && isStreamingActive) {
+        console.log('🚀 Auto Pay: Immediately paying chunk during streaming:', chunkId);
+        
+        // Mark as paying
+        setCurrentlyPayingChunks(prev => new Set(prev).add(chunkId));
+        
+        setPaymentRecords(prev => 
+          prev.map(record => 
+            record.chunkId === chunkId 
+              ? { ...record, isPaying: true }
+              : record
+          )
+        );
+        
+        // Trigger payment immediately
+        handlePayForChunkWithEnhancedInfo(chunkId, {
+          cumulativePayment,
+          remainingBalance,
+          channelId,
+          tokens
+        });
+      } else {
+        console.log('⏸️ Auto Pay disabled or streaming ended - chunk will wait for manual payment or batch processing:', chunkId);
+      }
     };
 
     window.addEventListener('tokenStreamUpdate', handlePaymentChannelData as EventListener);
     window.addEventListener('chunkPaymentSuccess', handleChunkPaymentSuccess as EventListener);
+    window.addEventListener('newChunkArrived', handleNewChunkArrived as EventListener);
+    
+    console.log('✅ Event listeners added successfully');
     
     return () => {
+      console.log('🧹 Cleaning up event listeners');
       window.removeEventListener('tokenStreamUpdate', handlePaymentChannelData as EventListener);
       window.removeEventListener('chunkPaymentSuccess', handleChunkPaymentSuccess as EventListener);
+      window.removeEventListener('newChunkArrived', handleNewChunkArrived as EventListener);
     };
-  }, []);
+  }, [handlePayForChunkWithEnhancedInfo, threadRuntime, autoPayUserSetting, isStreamingActive]); // Added autoPayUserSetting and isStreamingActive
 
-  // Simulate chunk received event (for testing)
-  const handleChunkReceived = async (chunkId: string, tokens: number) => {
-    const newChunk: ChunkPaymentStatus = {
-      chunkId,
-      tokens,
-      status: 'pending'
-    };
-    
-    setChunkPayments(prev => [...prev, newChunk]);
-    setTotalPendingTokens(prev => prev + tokens);
 
-    // Auto-pay if enabled
-    if (autoPayEnabled) {
-      try {
-        setChunkPayments(prev =>
-          prev.map(chunk =>
-            chunk.chunkId === chunkId
-              ? { ...chunk, status: 'paying' }
-              : chunk
-          )
-        );
-
-        await payForChunk(chunkId);
-        
-        setChunkPayments(prev =>
-          prev.map(chunk =>
-            chunk.chunkId === chunkId
-              ? { ...chunk, status: 'paid' }
-              : chunk
-          )
-        );
-        
-        setTotalPendingTokens(prev => prev - tokens);
-      } catch (error) {
-        setChunkPayments(prev =>
-          prev.map(chunk =>
-            chunk.chunkId === chunkId
-              ? { ...chunk, status: 'failed', error: error instanceof Error ? error.message : 'Payment failed' }
-              : chunk
-          )
-        );
-      }
-    }
-  };
 
   // Handle manual payment for a specific chunk
   const handlePayForChunk = async (chunkId: string) => {
-    setChunkPayments(prev =>
-      prev.map(chunk =>
-        chunk.chunkId === chunkId
-          ? { ...chunk, status: 'paying' }
-          : chunk
+    // Find the payment record to get the payment info
+    const record = paymentRecords.find(r => r.chunkId === chunkId);
+    if (!record) {
+      console.error('Payment record not found for chunk:', chunkId);
+      alert('Payment record not found');
+      return;
+    }
+
+    // Mark as paying
+    setCurrentlyPayingChunks(prev => new Set(prev).add(chunkId));
+    setPaymentRecords(prev => 
+      prev.map(record => 
+        record.chunkId === chunkId 
+          ? { ...record, isPaying: true }
+          : record
       )
     );
 
     try {
-      const result = await payForChunk(chunkId);
+      // Use the enhanced payment method with calculated payment info from record data
+      const cumulativePayment = record.consumedTokens * 100; // Convert tokens to CKB
+      const remainingBalance = record.remainingTokens * 100; // Convert tokens to CKB
       
-      setChunkPayments(prev =>
-        prev.map(chunk =>
-          chunk.chunkId === chunkId
-            ? { ...chunk, status: 'paid' }
-            : chunk
+      const result = await payForChunk(chunkId, {
+        cumulativePayment,
+        remainingBalance,
+        channelId: paymentChannelInfo?.channelId || '',
+        tokens: record.tokens
+      });
+      
+      // Remove from paying state
+      setCurrentlyPayingChunks(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(chunkId);
+        return newSet;
+      });
+      
+      // Update payment record to paid
+      setPaymentRecords(prev => 
+        prev.map(record => 
+          record.chunkId === chunkId 
+            ? { 
+                ...record, 
+                isPaid: true, 
+                isPaying: false,
+                transactionData: result.transactionData ? (result.transactionData as unknown as Record<string, unknown>) : undefined,
+                // Keep the original consumedTokens - don't overwrite with current channel total
+                // consumedTokens: record.consumedTokens, // Preserve original cumulative value
+                remainingTokens: result.remainingTokens
+              }
+            : record
         )
       );
-      
-      setTotalPendingTokens(prev => prev - result.tokens);
-      
-      // Add payment record with transaction details
-      const paymentRecord: PaymentRecord = {
-        chunkId: result.chunkId,
-        tokens: result.tokens,
-        consumedTokens: paymentChannelInfo?.consumedTokens || 0,
-        remainingTokens: result.remainingTokens,
-        timestamp: new Date().toISOString(),
-        isPaid: true, // Mark as paid since payment was successful
-        transactionData: result.transactionData ? (result.transactionData as unknown as Record<string, unknown>) : undefined
-      };
-      
-      setPaymentRecords(prev => [paymentRecord, ...prev]); // Add to front of list
       
       console.log(`✅ Successfully paid for chunk: ${chunkId} (${result.tokens} tokens)`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Payment failed';
       
-      setChunkPayments(prev =>
-        prev.map(chunk =>
-          chunk.chunkId === chunkId
-            ? { ...chunk, status: 'failed', error: errorMessage }
-            : chunk
+      // Remove from paying state and mark as failed
+      setCurrentlyPayingChunks(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(chunkId);
+        return newSet;
+      });
+      
+      setPaymentRecords(prev => 
+        prev.map(record => 
+          record.chunkId === chunkId 
+            ? { ...record, isPaying: false }
+            : record
         )
       );
       
@@ -354,100 +469,240 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
     }
   };
 
-  // Handle authentication before submission
-  const handleAuthCheck = useCallback(() => {
+  // Monitor streaming state and control Auto Pay
+  useEffect(() => {
+    const runtime = threadRuntime;
+    if (runtime && runtime.subscribe) {
+      return runtime.subscribe(() => {
+        const state = runtime.getState();
+        const isRunning = state.isRunning || false; // Check if assistant is currently running/streaming
+        
+        setIsStreamingActive(isRunning);
+        
+        // Disable Auto Pay during streaming, enable after streaming completes
+        if (isRunning) {
+          setHasStreamingStarted(true);
+          console.log('🚫 Streaming started - Auto Pay disabled');
+          setAutoPayEnabled(false);
+        } else {
+          // Only process "streaming ended" logic if streaming had actually started
+          if (hasStreamingStarted) {
+            console.log('✅ Streaming ended - Auto Pay restored to user setting:', autoPayUserSetting);
+            setAutoPayEnabled(autoPayUserSetting);
+            
+            // No need to process unpaid chunks here anymore
+            // All chunks are already paid during streaming if Auto Pay is enabled
+            console.log('🏁 Streaming completed - all chunks should already be paid if Auto Pay was enabled');
+          } else {
+            console.log('🔄 Page initialized - streaming has not started yet, no Auto Pay triggered');
+          }
+        }
+      });
+    }
+  }, [threadRuntime, autoPayUserSetting, handlePayForChunkWithEnhancedInfo, paymentChannelInfo?.channelId, hasStreamingStarted]);
+
+  // Handle authentication and payment check before submission
+  const handlePreSendValidation = useCallback(async () => {
     if (!user) {
       onAuthRequired();
       return false;
     }
     
+    console.log('🔍 Pre-send validation - isDataLoading:', isDataLoading, 'paymentRecords.length:', paymentRecords.length);
+    
+    // Always fetch the latest chunk status to ensure we have current data
+    try {
+      const latestChunkResponse = await fetch('/api/chunks/latest', {
+        credentials: 'include'
+      });
+      
+      if (latestChunkResponse.ok) {
+        const latestChunkResult = await latestChunkResponse.json();
+        
+        if (latestChunkResult.data.hasLatestChunk) {
+          const latestChunk = latestChunkResult.data.latestChunk;
+          console.log('🔍 Latest chunk status - chunkId:', latestChunk.chunkId, 'isPaid:', latestChunk.isPaid);
+          
+          // If latest chunk is unpaid, show payment modal and prevent sending
+          if (!latestChunk.isPaid) {
+            const record: PaymentRecord = {
+              chunkId: latestChunk.chunkId,
+              tokens: latestChunk.tokens,
+              consumedTokens: latestChunk.consumedTokens,
+              remainingTokens: latestChunk.remainingTokens,
+              timestamp: latestChunk.timestamp,
+              transactionData: latestChunk.transactionData,
+              isPaid: latestChunk.isPaid,
+              isPaying: false
+            };
+            
+            console.log('❌ Latest chunk is unpaid - showing payment modal and preventing send');
+            setSelectedRecord(record);
+            setShowPaymentModal(true);
+            return false; // Prevent sending - don't call onNewQuestion()
+          } else {
+            console.log('✅ Latest chunk is paid - allowing send');
+          }
+        } else {
+          console.log('ℹ️ No latest chunk found - allowing send');
+        }
+      } else {
+        console.log('⚠️ Failed to fetch latest chunk status - allowing send');
+      }
+    } catch (error) {
+      console.error('Failed to fetch latest chunk status:', error);
+      // Continue with normal validation if fetch fails
+    }
+    
+    // Only generate new session ID if validation passes
     const sessionId = onNewQuestion();
-    
-    // Set streaming as active
-    setIsStreamingActive(true);
-    
-    // Clear chunk payments for new session
-    setChunkPayments([]);
-    setTotalPendingTokens(0);
-    
-    // Set streaming as inactive after a reasonable delay
-    setTimeout(() => {
-      setIsStreamingActive(false);
-    }, 10000); // 10 seconds timeout
-    
-    return true;
-  }, [user, onAuthRequired, onNewQuestion]);
+    console.log('✅ Pre-send validation passed - new session ID:', sessionId);
+    return true; // Allow sending
+  }, [user, onAuthRequired, onNewQuestion, isDataLoading, paymentRecords]);
   
-  // Listen for submit events
+  // Custom send handler with payment validation
+  const handleSend = useCallback(async () => {
+    console.log('📨 Send button clicked - starting validation');
+    const isValid = await handlePreSendValidation();
+    console.log('🔍 Validation result:', isValid);
+    
+    if (!isValid) {
+      console.log('❌ Validation failed - not sending message');
+      return; // Pre-send validation failed
+    }
+    
+    console.log('✅ Validation passed - sending message');
+    // Validation passed, send the message
+    composerRuntime.send();
+  }, [handlePreSendValidation, composerRuntime]);
+  
+  // Handle keyboard events for Enter key
+  const handleKeyDown = useCallback(async (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault(); // Prevent default composer send behavior
+      console.log('⌨️ Enter key pressed - triggering validation');
+      await handleSend();
+    }
+  }, [handleSend]);
+  
+  // Listen for submit events and intercept with payment validation
   useEffect(() => {
     const runtime = composerRuntime;
     if (runtime && runtime.subscribe) {
       return runtime.subscribe(() => {
         const state = runtime.getState();
-        if (state.text && !user) {
-          handleAuthCheck();
-        }
+        // We'll handle validation in the send button click instead
+        // This effect is kept for potential future use
       });
     }
-  }, [composerRuntime, handleAuthCheck, user]);
+  }, [composerRuntime, user]);
 
-  // Group chunks by status for display
-  const pendingChunks = chunkPayments.filter(c => c.status === 'pending');
-  const payingChunks = chunkPayments.filter(c => c.status === 'paying');
-  const failedChunks = chunkPayments.filter(c => c.status === 'failed');
+
 
   return (
     <div className="space-y-2">
       {/* Persistent Payment Status Panel - Always visible when user is logged in */}
       {user && (
-        <div className="px-3 py-2 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+        <div className="px-3 py-2 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2 text-green-700 dark:text-green-300">
+            <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
               <Coins className="h-4 w-4" />
               <span className="text-sm font-medium">Payment Status</span>
             </div>
             
-            {paymentChannelInfo && (
-              <div className="flex items-center gap-4 text-xs text-green-600 dark:text-green-400">
-                <span>Consumed: {paymentChannelInfo.consumedTokens.toLocaleString()} Tokens</span>
-                <span>Remaining: {paymentChannelInfo.remainingTokens.toLocaleString()} Tokens</span>
-                <span className={`inline-flex h-2 w-2 rounded-full ${
-                  paymentChannelInfo.remainingTokens < paymentChannelInfo.channelTotalTokens * 0.1 ? 'bg-red-500' : 
-                  paymentChannelInfo.remainingTokens < paymentChannelInfo.channelTotalTokens * 0.3 ? 'bg-yellow-500' : 'bg-green-500'
-                }`} />
-                <span>{Math.max(0, (paymentChannelInfo.remainingTokens / paymentChannelInfo.channelTotalTokens * 100)).toFixed(1)}% remaining</span>
+            <div className="flex items-center gap-4">
+              {/* Display cumulative and remaining tokens from latest chunk data */}
+              {paymentRecords.length > 0 && (
+                <div className="flex items-center gap-4 text-xs text-gray-600 dark:text-gray-400">
+                  <span>Cumulative: {Math.floor((paymentRecords[0].consumedTokens || 0)).toLocaleString()} Tokens</span>
+                  <span>Remaining: {Math.floor((paymentRecords[0].remainingTokens || 0)).toLocaleString()} Tokens</span>
+                  <span className={`inline-flex h-2 w-2 rounded-full ${
+                    paymentChannelInfo && paymentRecords[0].remainingTokens
+                      ? paymentRecords[0].remainingTokens < paymentChannelInfo.channelTotalTokens * 0.1 ? 'bg-red-500' : 
+                        paymentRecords[0].remainingTokens < paymentChannelInfo.channelTotalTokens * 0.3 ? 'bg-gray-400' : 'bg-gray-600'
+                      : 'bg-gray-500'
+                  }`} />
+                  <span>
+                    {paymentChannelInfo && paymentRecords[0].remainingTokens
+                      ? Math.max(0, (paymentRecords[0].remainingTokens / paymentChannelInfo.channelTotalTokens * 100)).toFixed(1)
+                      : '0.0'
+                    }% remaining
+                  </span>
+                </div>
+              )}
+              
+              {/* Fallback to channel info if no payment records */}
+              {paymentRecords.length === 0 && paymentChannelInfo && (
+                <div className="flex items-center gap-4 text-xs text-gray-600 dark:text-gray-400">
+                  <span>Cumulative: {paymentChannelInfo.consumedTokens.toLocaleString()} Tokens</span>
+                  <span>Remaining: {paymentChannelInfo.remainingTokens.toLocaleString()} Tokens</span>
+                  <span className={`inline-flex h-2 w-2 rounded-full ${
+                    paymentChannelInfo.remainingTokens < paymentChannelInfo.channelTotalTokens * 0.1 ? 'bg-red-500' : 
+                    paymentChannelInfo.remainingTokens < paymentChannelInfo.channelTotalTokens * 0.3 ? 'bg-gray-400' : 'bg-gray-600'
+                  }`} />
+                  <span>{Math.max(0, (paymentChannelInfo.remainingTokens / paymentChannelInfo.channelTotalTokens * 100)).toFixed(1)}% remaining</span>
+                </div>
+              )}
+              
+              {/* Auto Pay Toggle Switch */}
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={autoPayUserSetting}
+                    onChange={(e) => {
+                      const newSetting = e.target.checked;
+                      setAutoPayUserSetting(newSetting);
+                      // If not streaming, update Auto Pay immediately
+                      if (!isStreamingActive) {
+                        setAutoPayEnabled(newSetting);
+                      }
+                    }}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 focus:ring-2"
+                    disabled={isStreamingActive}
+                  />
+                  <span className="font-medium">
+                    Auto Pay
+                  </span>
+                </label>
               </div>
-            )}
+            </div>
           </div>
 
           {/* Payment Records List */}
           {paymentRecords.length > 0 ? (
             <div className="space-y-2 max-h-48 overflow-y-auto">
-              <div className="text-xs font-medium text-green-700 dark:text-green-300 mb-2">
+              <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Payment History:
               </div>
               {paymentRecords.map((record, index) => (
-                <div key={`${record.chunkId}-${index}`} className="flex items-center justify-between bg-white dark:bg-gray-800 rounded px-3 py-2 text-xs border border-green-200 dark:border-green-700">
+                <div key={`${record.chunkId}-${index}`} className="flex items-center justify-between bg-white dark:bg-gray-800 rounded px-3 py-2 text-xs border border-gray-200 dark:border-gray-600">
                   <div className="flex items-center gap-3">
                     <span className="font-mono text-gray-600 dark:text-gray-400">
                       {record.chunkId.slice(-8)}...
                     </span>
-                    <span className="text-blue-600 dark:text-blue-400">
+                    <span className="text-gray-900 dark:text-gray-100 font-medium">
                       {record.tokens} tokens
                     </span>
-                    <span className="text-green-600 dark:text-green-400">
-                      Consumed: {record.consumedTokens.toLocaleString()} Tokens
+                    <span className="text-gray-700 dark:text-gray-300">
+                      Cumulative: {record.consumedTokens.toLocaleString()} Tokens
                     </span>
-                    <span className="text-purple-600 dark:text-purple-400">
+                    <span className="text-gray-600 dark:text-gray-400">
                       Remaining: {record.remainingTokens.toLocaleString()} Tokens
                     </span>
-                    {record.isPaid === false && (
-                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400">
+                    {record.isPaying && (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200">
+                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                        Paying...
+                      </span>
+                    )}
+                    {!record.isPaying && record.isPaid === false && (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
                         Unpaid
                       </span>
                     )}
-                    {record.isPaid === true && (
-                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400">
+                    {!record.isPaying && record.isPaid === true && (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
                         <Check className="h-3 w-3 mr-1" />
                         Paid
                       </span>
@@ -455,17 +710,17 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
                   </div>
                   
                   <div className="flex items-center gap-2">
-                    <span className="text-gray-500 dark:text-gray-400">
+                    <span className="text-gray-500 dark:text-gray-500">
                       {new Date(record.timestamp).toLocaleTimeString()}
                     </span>
                     
                     {/* Show Pay button for unpaid records */}
-                    {record.isPaid === false && (
+                    {!record.isPaying && record.isPaid === false && (
                       <Button
                         onClick={() => handlePayForChunk(record.chunkId)}
                         size="sm"
                         variant="default"
-                        className="h-6 px-2 text-xs bg-orange-600 hover:bg-orange-700 text-white"
+                        className="h-6 px-2 text-xs bg-black hover:bg-gray-800 text-white dark:bg-white dark:hover:bg-gray-200 dark:text-black"
                         disabled={isProcessing}
                       >
                         {isProcessing ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Pay'}
@@ -477,7 +732,7 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
                       onClick={() => setSelectedRecord(record)}
                       size="sm"
                       variant="outline"
-                      className="h-6 w-6 p-0"
+                      className="h-6 w-6 p-0 border-gray-300 hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-700"
                     >
                       <Eye className="h-3 w-3" />
                     </Button>
@@ -486,82 +741,14 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
               ))}
             </div>
           ) : (
-            <div className="text-xs text-green-600 dark:text-green-400 text-center py-4">
+            <div className="text-xs text-gray-600 dark:text-gray-400 text-center py-4">
               New chunk payments will appear here during chat interactions.
             </div>
           )}
         </div>
       )}
 
-      {/* Chunk Payment Status Bar */}
-      {user && chunkPayments.length > 0 && (
-        <div className="px-3 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-          <div className="flex items-center justify-between text-sm">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Coins className="h-4 w-4 text-blue-500" />
-                <span className="font-medium">Chunk Payments:</span>
-              </div>
-              
-              {payingChunks.length > 0 && (
-                <div className="flex items-center gap-1 text-blue-600">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  <span>{payingChunks.length} paying...</span>
-                </div>
-              )}
-              
-              {pendingChunks.length > 0 && (
-                <span className="text-orange-600">
-                  {pendingChunks.length} pending ({totalPendingTokens} tokens)
-                </span>
-              )}
-              
-              {failedChunks.length > 0 && (
-                <span className="text-red-600">
-                  {failedChunks.length} failed
-                </span>
-              )}
-            </div>
 
-            <div className="flex items-center gap-2">
-              <label className="flex items-center gap-1 text-xs">
-                <input
-                  type="checkbox"
-                  checked={autoPayEnabled}
-                  onChange={(e) => setAutoPayEnabled(e.target.checked)}
-                  className="rounded"
-                />
-                Auto-pay
-              </label>
-            </div>
-          </div>
-
-          {/* Pending Chunks List */}
-          {pendingChunks.length > 0 && !autoPayEnabled && (
-            <div className="mt-2 space-y-1">
-              {pendingChunks.slice(0, 3).map(chunk => (
-                <div key={chunk.chunkId} className="flex items-center justify-between bg-white dark:bg-gray-800 rounded px-2 py-1 text-xs">
-                  <span className="font-mono">{chunk.chunkId.slice(-8)}... ({chunk.tokens} tokens)</span>
-                  <Button
-                    onClick={() => handlePayForChunk(chunk.chunkId)}
-                    size="sm"
-                    variant="default"
-                    className="h-5 px-2 text-xs"
-                    disabled={isProcessing}
-                  >
-                    Pay
-                  </Button>
-                </div>
-              ))}
-              {pendingChunks.length > 3 && (
-                <div className="text-xs text-muted-foreground text-center">
-                  ... and {pendingChunks.length - 3} more
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
 
       <ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col rounded-3xl border border-border bg-muted px-1 pt-2 shadow-[0_9px_9px_0px_rgba(0,0,0,0.01),0_2px_5px_0px_rgba(0,0,0,0.06)] dark:border-muted-foreground/15">
         <ComposerAttachments />
@@ -571,25 +758,25 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
           rows={1}
           autoFocus
           aria-label="Message input"
+          onKeyDown={handleKeyDown}
         />
         
         <div className="aui-composer-action-wrapper relative mx-1 mt-2 mb-2 flex items-center justify-between">
           <ComposerAddAttachment />
 
           <ThreadPrimitive.If running={false}>
-            <ComposerPrimitive.Send asChild>
-              <TooltipIconButton
-                tooltip="Send message"
-                side="bottom"
-                type="button"
-                variant="default"
-                size="icon"
-                className="aui-composer-send size-[34px] rounded-full p-1"
-                aria-label="Send message"
-              >
-                <ArrowUpIcon className="aui-composer-send-icon size-5" />
-              </TooltipIconButton>
-            </ComposerPrimitive.Send>
+            <TooltipIconButton
+              tooltip="Send message"
+              side="bottom"
+              type="button"
+              variant="default"
+              size="icon"
+              className="aui-composer-send size-[34px] rounded-full p-1"
+              aria-label="Send message"
+              onClick={handleSend}
+            >
+              <ArrowUpIcon className="aui-composer-send-icon size-5" />
+            </TooltipIconButton>
           </ThreadPrimitive.If>
 
           <ThreadPrimitive.If running>
@@ -608,16 +795,19 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
         </div>
       </ComposerPrimitive.Root>
 
-      {/* Transaction Details Modal */}
+      {/* Transaction Details Modal - Enhanced for pre-send payment check */}
       {selectedRecord && createPortal(
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
           <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Transaction Details
+                {showPaymentModal ? 'Payment Required' : 'Transaction Details'}
               </h3>
               <Button
-                onClick={() => setSelectedRecord(null)}
+                onClick={() => {
+                  setSelectedRecord(null);
+                  setShowPaymentModal(false);
+                }}
                 size="sm"
                 variant="ghost"
                 className="h-8 w-8 p-0"
@@ -625,6 +815,15 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
                 <X className="h-4 w-4" />
               </Button>
             </div>
+            
+            {/* Payment required message for pre-send check */}
+            {showPaymentModal && selectedRecord.isPaid === false && (
+              <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                <p className="text-sm text-yellow-800 dark:text-yellow-200 font-medium">
+                  You must pay for the latest chunk before starting a new conversation.
+                </p>
+              </div>
+            )}
             
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -650,7 +849,7 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
                   </label>
                   <p className="text-sm bg-gray-100 dark:bg-gray-700 p-2 rounded">
                     {selectedRecord.isPaid === true && (
-                      <span className="inline-flex items-center text-green-600">
+                      <span className="inline-flex items-center text-gray-600 dark:text-gray-400">
                         <Check className="h-4 w-4 mr-1" />
                         Paid
                       </span>
@@ -689,6 +888,41 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
                   <pre className="text-xs bg-gray-100 dark:bg-gray-700 p-3 rounded overflow-x-auto whitespace-pre-wrap">
                     {JSON.stringify(selectedRecord.transactionData, null, 2)}
                   </pre>
+                </div>
+              )}
+              
+              {/* Payment action buttons for unpaid chunks */}
+              {selectedRecord.isPaid === false && (
+                <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-600">
+                  <Button
+                    onClick={() => {
+                      setSelectedRecord(null);
+                      setShowPaymentModal(false);
+                    }}
+                    variant="outline"
+                    size="sm"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      handlePayForChunk(selectedRecord.chunkId);
+                      setSelectedRecord(null);
+                      setShowPaymentModal(false);
+                    }}
+                    size="sm"
+                    className="bg-black hover:bg-gray-800 text-white dark:bg-white dark:hover:bg-gray-200 dark:text-black"
+                    disabled={isProcessing || selectedRecord.isPaying}
+                  >
+                    {isProcessing || selectedRecord.isPaying ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Paying...
+                      </>
+                    ) : (
+                      'Pay Now'
+                    )}
+                  </Button>
                 </div>
               )}
             </div>

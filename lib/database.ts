@@ -908,6 +908,8 @@ export interface CreateChunkPaymentData {
   channel_id?: string;
   tokens_count: number;
   is_paid?: boolean; // API accepts boolean, will be converted to integer internally
+  cumulative_payment?: number; // Cumulative payment amount in CKB
+  remaining_balance?: number; // Remaining balance in CKB
 }
 
 // Scheduled Task Log interface
@@ -1180,16 +1182,25 @@ export class ChunkPaymentRepository {
   }
 
   createChunkPayment(chunkData: CreateChunkPaymentData): ChunkPayment {
-    const { chunk_id, user_id, session_id, channel_id, tokens_count, is_paid } = chunkData;
+    const { chunk_id, user_id, session_id, channel_id, tokens_count, is_paid, cumulative_payment, remaining_balance } = chunkData;
     
     const stmt = this.db.prepare(`
-      INSERT INTO chunk_payments (chunk_id, user_id, session_id, channel_id, tokens_count, is_paid)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO chunk_payments (chunk_id, user_id, session_id, channel_id, tokens_count, is_paid, cumulative_payment, remaining_balance)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     try {
       const paidFlag = is_paid ? 1 : 0; // Convert boolean to integer for SQLite
-      const result = stmt.run(chunk_id, user_id, session_id, channel_id || null, tokens_count, paidFlag);
+      const result = stmt.run(
+        chunk_id, 
+        user_id, 
+        session_id, 
+        channel_id || null, 
+        tokens_count, 
+        paidFlag,
+        cumulative_payment || null,
+        remaining_balance || null
+      );
       return this.getChunkPaymentById(result.lastInsertRowid as number)!;
     } catch (error: unknown) {
       if (error instanceof Error && 'code' in error && error.code === 'SQLITE_CONSTRAINT_UNIQUE') {

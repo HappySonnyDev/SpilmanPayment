@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
       execute: ({ writer }) => {
         const result = streamText({
           model: openrouter("qwen/qwen3-14b:free"),
-          // model: openrouter("deepseek/deepseek-r1-0528-qwen3-8b:free"),
+          // model: openrouter("google/gemma-3n-e2b-it:free"),
           messages: convertToModelMessages(messages),
           onChunk: ({ chunk }) => {
             // Track tokens for each chunk in real-time
@@ -85,7 +85,9 @@ export async function POST(req: NextRequest) {
                     session_id: currentSessionId,
                     channel_id: defaultChannel.channel_id,
                     tokens_count: tokens,
-                    is_paid: false
+                    is_paid: false,
+                    cumulative_payment: totalCumulativePaymentCKB, // Store the calculated payment amount
+                    remaining_balance: potentialRemainingBalance // Store the calculated remaining balance (will be negative)
                   });
                 } catch (error) {
                   console.warn('Failed to store unpaid chunk payment:', error);
@@ -98,6 +100,22 @@ export async function POST(req: NextRequest) {
                 // Increment session token counter for this chunk
                 sessionCumulativeTokens += tokens;
                 
+                // Calculate cumulative payment using session tracking to avoid race conditions
+                // This represents what the user should pay in total for all chunks in this channel
+                const cumulativeTokens = existingCumulativeTokens + sessionCumulativeTokens;
+                // Convert tokens to CKB for payment: 1 Token = 100 CKB (since 1 CKB = 0.01 Token)
+                const cumulativePayment = cumulativeTokens * 100; // Convert tokens to CKB
+                const remainingBalance = defaultChannel.amount - cumulativePayment;
+                
+                console.log(`📊 Payment Channel ${defaultChannel.channel_id} - Chunk ${chunkId}:`);
+                console.log(`  - This chunk tokens: ${tokens}`);
+                console.log(`  - Session tokens so far: ${sessionCumulativeTokens}`);
+                console.log(`  - Existing channel tokens: ${existingCumulativeTokens}`);
+                console.log(`  - Total cumulative tokens: ${cumulativeTokens}`);
+                console.log(`  - Cumulative payment (CKB): ${cumulativePayment}`);
+                console.log(`  - Remaining balance (CKB): ${remainingBalance}`);
+                console.log(`Payment Channel ${defaultChannel.channel_id}: Cumulative payment will be ${cumulativePayment}/${defaultChannel.amount} CKB (${remainingBalance} CKB remaining)`);
+
                 // Create chunk record as UNPAID - payment is separate from consumption tracking
                 chunkRepo.createChunkPayment({
                   chunk_id: chunkId,
@@ -105,7 +123,9 @@ export async function POST(req: NextRequest) {
                   session_id: currentSessionId,
                   channel_id: defaultChannel.channel_id,
                   tokens_count: tokens,
-                  is_paid: false // Always create as unpaid for payment tracking
+                  is_paid: false, // Always create as unpaid for payment tracking
+                  cumulative_payment: cumulativePayment, // Store cumulative payment amount
+                  remaining_balance: remainingBalance // Store remaining balance
                 });
                 
                 // Update channel consumed tokens immediately during streaming
@@ -119,16 +139,6 @@ export async function POST(req: NextRequest) {
                 updateStmt.run(tokens, defaultChannel.channel_id);
                 
                 console.log(`✅ Chunk created for payment tracking: ${tokens} tokens for chunk: ${chunkId} (isPaid: false)`);
-                
-                // Calculate cumulative payment using session tracking to avoid race conditions
-                // This represents what the user should pay in total for all chunks in this channel
-                const cumulativeTokens = existingCumulativeTokens + sessionCumulativeTokens;
-                // Convert tokens to CKB for payment: 1 Token = 100 CKB (since 1 CKB = 0.01 Token)
-                const cumulativePayment = cumulativeTokens * 100; // Convert tokens to CKB
-                const remainingBalance = defaultChannel.amount - cumulativePayment;
-                
-                console.log(`Payment Channel ${defaultChannel.channel_id}: Session tokens so far: ${sessionCumulativeTokens}, Total cumulative: ${cumulativeTokens}`);
-                console.log(`Payment Channel ${defaultChannel.channel_id}: Cumulative payment will be ${cumulativePayment}/${defaultChannel.amount} CKB (${remainingBalance} CKB remaining)`);
                 
                 // Send chunk payment data to the client with cumulative payment info
                 writer.write({
@@ -156,7 +166,9 @@ export async function POST(req: NextRequest) {
                     session_id: currentSessionId,
                     channel_id: defaultChannel.channel_id,
                     tokens_count: tokens,
-                    is_paid: false
+                    is_paid: false,
+                    cumulative_payment: undefined, // No payment calculation in fallback
+                    remaining_balance: undefined // No balance calculation in fallback
                   });
                 } catch (fallbackError) {
                   console.warn('Failed to store unpaid chunk payment:', fallbackError);

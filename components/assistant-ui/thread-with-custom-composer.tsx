@@ -164,8 +164,6 @@ export const ThreadWithCustomComposer: FC<ThreadWithCustomComposerProps> = ({
               </ThreadPrimitive.Empty>
               <ChunkAwareComposer 
                 onAuthRequired={onAuthRequired}
-                pendingMessage={pendingMessage}
-                setPendingMessage={setPendingMessage}
                 onNewQuestion={onNewQuestion}
               />
             </div>
