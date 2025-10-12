@@ -27,9 +27,27 @@ interface SelectValueProps {
 
 const Select: React.FC<SelectProps> = ({ value, onValueChange, children }) => {
   const [isOpen, setIsOpen] = React.useState(false)
+  const selectRef = React.useRef<HTMLDivElement>(null)
+  
+  // Handle click outside to close dropdown
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (selectRef.current && !selectRef.current.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isOpen])
   
   return (
-    <div className="relative">
+    <div className="relative" ref={selectRef}>
       {React.Children.map(children, (child) => {
         if (React.isValidElement(child)) {
           return React.cloneElement(child as React.ReactElement<any>, {
@@ -50,7 +68,7 @@ const SelectTrigger = React.forwardRef<HTMLButtonElement, SelectTriggerProps & a
     <button
       ref={ref}
       className={cn(
-        "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+        "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-0 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50 [&:focus-visible]:outline-none [&:focus-visible]:ring-0 [&:focus-visible]:ring-offset-0 cursor-pointer",
         className
       )}
       onClick={() => setIsOpen(!isOpen)}

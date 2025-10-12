@@ -15,178 +15,24 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ccc, hexFrom, WitnessArgs } from "@ckb-ccc/core";
-import { DEVNET_SCRIPTS, buildClient, generateCkbSecp256k1Signature, generateCkbSecp256k1SignatureWithSince, createWitnessData, getMessageHashFromTx, buildClientAndSigner } from "@/lib/ckb";
+import { buildClient, executePayNow, executeRefund, PaymentResult } from "@/lib/ckb";
 import { channel } from "@/lib/api";
+import { DataDisplay } from "@/components/bussiness/data-display";
+import { usePaymentChannels, PaymentChannel } from "@/hooks/use-payment-channels";
 
-interface PaymentResult {
-  success: boolean;
-  txHash?: string;
-  error?: string;
-  channelStatus?: string;
-}
+
 import { ChevronDown } from "lucide-react";
 import { useAuth } from "@/app/context/auth-context";
 
-interface PaymentChannel {
-  id: number;
-  channelId: string;
-  amount: number;
-  durationDays: number;
-  durationSeconds?: number; // Add optional seconds field
-  status: number;
-  statusText: string;
-  isDefault: boolean;
-  createdAt: string;
-  updatedAt: string;
-  verifiedAt?: string; // Add verifiedAt field
-  // Raw database fields for data extraction
-  sellerSignature: string | null;
-  refundTxData: string | null;
-  fundingTxData: string | null;
-}
-
 export const PaymentChannelSettings: React.FC = () => {
-  const [channels, setChannels] = useState<PaymentChannel[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { channels, isLoading, refetch } = usePaymentChannels();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [expandedChannels, setExpandedChannels] = useState<Set<string>>(new Set());
   const { user } = useAuth();
 
-  /**
-   * Executes the PayNow payment flow - sends funding transaction and confirms payment
-   */
-  const executePayNow = async (paymentData: {
-    channelId: string;
-    fundingTx: Record<string, unknown>;
-    amount: number;
-  }): Promise<PaymentResult> => {
-    try {
-      // Get buyer private key from localStorage
-      const buyerPrivateKey = localStorage.getItem("private_key");
-
-      if (!buyerPrivateKey) {
-        throw new Error("Please connect your CKB wallet first in Profile settings.");
-      }
-
-      // Convert fundingTx to CCC transaction
-      const fundingTx = ccc.Transaction.from(paymentData.fundingTx);
-
-      // Create CKB client and buyer signer
-      const { client: cccClient, signer: buyerSigner } = buildClientAndSigner(buyerPrivateKey);
-
-      console.log("Sending funding transaction:", fundingTx);
-
-      // Send the funding transaction
-      const txHash = await buyerSigner.sendTransaction(fundingTx);
-
-      console.log("Funding transaction sent successfully:", txHash);
-      
-      // Call confirm-funding API to verify transaction and activate channel
-      try {
-        const confirmResult = await channel.confirmFunding({
-          txHash: txHash,
-          channelId: paymentData.channelId,
-        });
-        console.log('Payment confirmed and channel activated:', confirmResult);
-        
-        return {
-          success: true,
-          txHash,
-          channelStatus: (confirmResult as { data?: { statusText?: string } }).data?.statusText,
-        };
-        
-      } catch (confirmError) {
-        console.error('Error confirming payment:', confirmError);
-        return {
-          success: false,
-          txHash,
-          error: `Payment sent successfully but could not verify channel activation. Transaction Hash: ${txHash}. Please contact support if needed.`,
-        };
-      }
-      
-    } catch (error) {
-      console.error('Payment error:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown payment error',
-      };
-    }
-  };
-
   // Extract transaction information from refund transaction data
-  const extractRefundTxInfo = (refundTxData: string | null) => {
-    if (!refundTxData) {
-      return {
-        inputTxHash: "N/A",
-        buyerAddress: user?.public_key || "N/A",
-      };
-    }
-
-    try {
-      const refundTx = JSON.parse(refundTxData);
-      
-      // Get input transaction hash from first input
-      const inputTxHash = refundTx.inputs?.[0]?.previousOutput?.txHash || "N/A";
-      
-      // Get buyer address from first output lock script
-      let buyerAddress = "N/A";
-      if (refundTx.outputs?.[0]?.lock) {
-        try {
-          const lockScript = refundTx.outputs[0].lock;
-          // Create a mock client for address conversion
-          const cccClient = new ccc.ClientPublicTestnet({
-            url: "http://localhost:28114",
-            scripts: DEVNET_SCRIPTS,
-          });
-          const address = ccc.Address.fromScript(
-            lockScript as ccc.Script,
-            cccClient,
-          ).toString();
-          buyerAddress = address;
-        } catch (addressError) {
-          console.error(
-            "Error converting lock script to address:",
-            addressError,
-          );
-          // Fallback to lock args or user public key
-          buyerAddress =
-            refundTx.outputs[0].lock.args || user?.public_key || "N/A";
-        }
-      } else {
-        buyerAddress = user?.public_key || "N/A";
-      }
-
-      return {
-        inputTxHash,
-        buyerAddress,
-      };
-    } catch (error) {
-      console.error("Error parsing refund transaction:", error);
-      return {
-        inputTxHash: "N/A",
-        buyerAddress: user?.public_key || "N/A",
-      };
-    }
-  };
-
-  // Fetch payment channels on component mount
-  useEffect(() => {
-    fetchPaymentChannels();
-  }, []);
-
-  const fetchPaymentChannels = async () => {
-    try {
-      setIsLoading(true);
-      const { channel } = await import('@/lib/api');
-      const result = await channel.list();
-      setChannels(result.data.channels as PaymentChannel[]);
-    } catch (error) {
-      console.error('Error fetching payment channels:', error);
-      alert('Failed to load payment channels');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  // Note: This function is kept for potential future use but currently unused
+  // since we now display the full transaction data using DataDisplay component
 
   const toggleChannelExpansion = (channelId: string) => {
     const newExpanded = new Set(expandedChannels);
@@ -223,7 +69,7 @@ export const PaymentChannelSettings: React.FC = () => {
         );
         
         // Refresh the channels list to show updated status
-        await fetchPaymentChannels();
+        await refetch();
       } else {
         alert(result.error);
       }
@@ -241,23 +87,11 @@ export const PaymentChannelSettings: React.FC = () => {
       setActionLoading(channelId);
       
       if (action === 'settle') {
-        // Call the settlement API
-        const response = await fetch('/api/channel/settle', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            channelId,
-          }),
+        // Call the settlement API using the shared API function
+        const result = await channel.settle({
+          channelId,
         });
         
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to settle channel');
-        }
-        
-        const result = await response.json();
         alert(
           `Channel settled successfully!\n` +
           `Transaction Hash: ${result.txHash}\n` +
@@ -265,7 +99,7 @@ export const PaymentChannelSettings: React.FC = () => {
         );
         
         // Refresh the channels list
-        await fetchPaymentChannels();
+        await refetch();
       }
       
     } catch (error) {
@@ -280,26 +114,14 @@ export const PaymentChannelSettings: React.FC = () => {
     try {
       setActionLoading(channelId);
       
-      const response = await fetch('/api/channel/set-default', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          channelId,
-        }),
+      const result = await channel.setDefault({
+        channelId,
       });
       
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to set as default');
-      }
-      
-      const result = await response.json();
       alert(`Channel set as default successfully!`);
       
       // Refresh the channels list
-      await fetchPaymentChannels();
+      await refetch();
     } catch (error) {
       console.error('Error setting default channel:', error);
       alert('Failed to set as default: ' + (error instanceof Error ? error.message : 'Unknown error'));
@@ -318,96 +140,26 @@ export const PaymentChannelSettings: React.FC = () => {
         return;
       }
 
-      // Get buyer private key from localStorage
-      const buyerPrivateKey = localStorage.getItem("private_key");
-      if (!buyerPrivateKey) {
-        alert("Please connect your CKB wallet first in Payment Channel settings.");
-        return;
-      }
+      // Use the shared refund utility
+      const result = await executeRefund({
+        refundTxData: channel.refundTxData,
+        sellerSignature: channel.sellerSignature,
+        durationSeconds: channel.durationSeconds,
+        durationDays: channel.durationDays,
+      });
 
-      // Parse the refund transaction (already includes fees from creation time)
-      const refundTxData = JSON.parse(channel.refundTxData);
-      const refundTx = ccc.Transaction.from(refundTxData);
-      
-      console.log('Using pre-calculated refund transaction:', refundTx);
-      
-      // Get transaction hash for signing
-      const transactionHash = refundTx.hash();
-      
-      // Generate message hash from completed refund transaction
-      const messageHash = getMessageHashFromTx(transactionHash);
-      
-      // Generate buyer signature with timelock (since this is a refund transaction)
-      // Use the same duration that was used during channel creation
-      const durationInSeconds = channel.durationSeconds || (channel.durationDays * 24 * 60 * 60);
-      
-      const sinceValue = ccc.numFromBytes(
-        new Uint8Array([
-          0x80,
-          0x00,
-          0x00,
-          0x00, // Relative time lock flag
-          0x00,
-          0x00,
-          0x00,
-          0x00,
-        ]),
-      ) + BigInt(durationInSeconds);
-      
-      console.log(`Generating buyer signature with since value: ${sinceValue}`);
-      console.log(`Duration in seconds: ${durationInSeconds}`);
-      
-      const buyerSignatureBytes = generateCkbSecp256k1SignatureWithSince(
-        buyerPrivateKey,
-        messageHash,
-        sinceValue,
-      );
-      
-      // Convert seller signature from hex to bytes
-      const sellerSignatureHex = channel.sellerSignature.startsWith('0x') 
-        ? channel.sellerSignature.slice(2) 
-        : channel.sellerSignature;
-      
-      if (sellerSignatureHex.length !== 130) {
-        throw new Error(`Invalid seller signature length: ${sellerSignatureHex.length}, expected 130`);
+      if (result.success) {
+        alert(
+          `Deposit withdrawn successfully!\n` +
+          `Transaction Hash: ${result.txHash}\n` +
+          `You can check the transaction status on CKB Explorer.`
+        );
+      } else {
+        alert(`Deposit withdrawal failed: ${result.error}`);
       }
-      
-      const sellerSignatureBytes = new Uint8Array(
-        sellerSignatureHex.match(/.{2}/g)!.map((byte) => parseInt(byte, 16))
-      );
-      
-      // Validate signature lengths
-      if (buyerSignatureBytes.length !== 65) {
-        throw new Error(`Invalid buyer signature length: ${buyerSignatureBytes.length}, expected 65`);
-      }
-      if (sellerSignatureBytes.length !== 65) {
-        throw new Error(`Invalid seller signature length: ${sellerSignatureBytes.length}, expected 65`);
-      }
-
-      // Create witness data with both signatures (buyer first, seller second)
-      const witnessData = createWitnessData(
-        buyerSignatureBytes,
-        sellerSignatureBytes,
-      );
-
-      // Update the transaction witnesses
-      const witnessArgs = new WitnessArgs(hexFrom(witnessData));
-      refundTx.witnesses[0] = hexFrom(witnessArgs.toBytes());
-      
-      // Submit the transaction to CKB network
-      const client = buildClient("devnet");
-      console.log('Submitting refund transaction with multi-sig:', refundTx);
-      
-      const txHash = await client.sendTransaction(refundTx);
-      
-      alert(
-        `Deposit withdrawn successfully!\n` +
-        `Transaction Hash: ${txHash}\n` +
-        `You can check the transaction status on CKB Explorer.`
-      );
       
       // Refresh the channels list
-      await fetchPaymentChannels();
+      await refetch();
       
     } catch (error) {
       console.error('Deposit withdrawal error:', error);
@@ -475,24 +227,6 @@ export const PaymentChannelSettings: React.FC = () => {
     }
   };
 
-  // Helper function to calculate period range
-  const formatDuration = (durationDays: number, durationSeconds?: number) => {
-    // If we have duration in seconds, use that; otherwise fall back to days
-    if (durationSeconds !== undefined && durationSeconds !== null) {
-      if (durationSeconds < 60) {
-        return `${durationSeconds}s`;
-      } else if (durationSeconds < 3600) {
-        return `${Math.floor(durationSeconds / 60)}m`;
-      } else if (durationSeconds < 86400) {
-        return `${Math.floor(durationSeconds / 3600)}h`;
-      } else {
-        const days = Math.floor(durationSeconds / 86400);
-        return `${days} day${days > 1 ? 's' : ''}`;
-      }
-    }
-    // Fallback to days format
-    return `${durationDays} day${durationDays > 1 ? 's' : ''}`;
-  };
 
   const getPeriodRange = (createdAt: string, verifiedAt: string | undefined, durationDays: number, durationSeconds?: number) => {
     // Use verifiedAt for active channels, createdAt for inactive channels
@@ -632,7 +366,7 @@ export const PaymentChannelSettings: React.FC = () => {
                       </TooltipContent>
                     </Tooltip>
                     <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                      {channel.amount.toLocaleString()} CKB
+                      {channel.amount.toLocaleString()} CKB / {(channel.amount * 0.01).toLocaleString()} Token
                     </div>
                     <div className="text-xs text-slate-600 dark:text-slate-400">
                       {getPeriodRange(channel.createdAt, channel.verifiedAt, channel.durationDays, channel.durationSeconds)}
@@ -658,118 +392,27 @@ export const PaymentChannelSettings: React.FC = () => {
               {/* Accordion Content */}
               {expandedChannels.has(channel.channelId) && (
                 <div className="border-t border-gray-200 dark:border-slate-700 p-6 bg-white dark:bg-slate-900">
-                  {/* Commented out for now to reduce content density */}
-                  {/*
-                  <div className="space-y-6">
-                    {/* Product Information */}
-                    {/*
-                    <div>
-                      <h4 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
-                        Product Information
-                      </h4>
-                      <div className="space-y-4 p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg">
-                        <div>
-                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
-                            Amount
-                          </label>
-                          <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg font-mono text-xs text-slate-700 dark:text-slate-300">
-                            {channel.amount.toLocaleString()} CKB
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
-                            Tokens
-                          </label>
-                          <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg font-mono text-xs text-slate-700 dark:text-slate-300">
-                            {(channel.amount * 0.01).toLocaleString()}
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
-                            Duration
-                          </label>
-                          <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg font-mono text-xs text-slate-700 dark:text-slate-300">
-                            {channel.durationDays} day{channel.durationDays > 1 ? 's' : ''}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    */}
-                    
-                    {/* Channel Information */}
-                    {/*
-                    <div>
-                      <h4 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
-                        Channel Information
-                      </h4>
-                      <div className="space-y-4 p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg">
-                        <div>
-                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
-                            Channel ID
-                          </label>
-                          <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg font-mono text-xs break-all text-slate-700 dark:text-slate-300">
-                            {channel.channelId}
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
-                            Period
-                          </label>
-                          <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg font-mono text-xs text-slate-700 dark:text-slate-300">
-                            {getPeriodRange(channel.createdAt, channel.verifiedAt, channel.durationDays, channel.durationSeconds)}
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
-                            Status
-                          </label>
-                          <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg text-xs">
-                            {getStatusBadge(channel.status, channel.statusText)}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    */}
-                  {/*
-                  </div>
-                  */}
-                  
-                  {/* Deposit Information */}
-                  <div className="">
-                    <h4 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
-                      Deposit Information
-                    </h4>
-                    <div className="space-y-4 p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg">
-                      <div>
-                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
-                          Input Transaction Hash
-                        </label>
-                        <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg font-mono text-xs break-all text-slate-700 dark:text-slate-300">
-                          {extractRefundTxInfo(channel.refundTxData).inputTxHash}
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
-                          Buyer Wallet Address
-                        </label>
-                        <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg font-mono text-xs break-all text-slate-700 dark:text-slate-300">
-                          {extractRefundTxInfo(channel.refundTxData).buyerAddress}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  {/* Refund Transaction */}
+                  {channel.refundTxData && (
+                    <DataDisplay
+                      title="Refund Transaction"
+                      data={JSON.parse(channel.refundTxData)}
+                    />
+                  )}
+
+                  {/* Funding Transaction */}
+                  {channel.fundingTxData && (
+                    <DataDisplay
+                      title="Funding Transaction"
+                      data={JSON.parse(channel.fundingTxData)}
+                    />
+                  )}
 
                   {/* Seller Signature */}
-                  <div className="mt-6">
-                    <h4 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
-                      Seller Signature
-                    </h4>
-                    <div className="p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg">
-                      <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg font-mono text-xs break-all text-slate-700 dark:text-slate-300">
-                        {channel.sellerSignature || "No signature available"}
-                      </div>
-                    </div>
-                  </div>
+                  <DataDisplay
+                    title="Seller Signature"
+                    data={channel.sellerSignature || "No signature available"}
+                  />
                 </div>
               )}
             </div>

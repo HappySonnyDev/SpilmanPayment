@@ -78,7 +78,7 @@ export const UserSettingsDialog: React.FC<UserSettingsDialogProps> = ({
                     key={tab.id}
                     variant={activeTab === tab.id ? "default" : "ghost"}
                     className={cn(
-                      "w-full justify-start",
+                      "w-full justify-start [&:focus-visible]:ring-0 [&:focus-visible]:ring-offset-0",
                       activeTab === tab.id &&
                         "bg-primary text-primary-foreground",
                     )}

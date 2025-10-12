@@ -3,37 +3,20 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Star, Activity } from "lucide-react";
-
-interface PaymentChannel {
-  id: number;
-  channelId: string;
-  amount: number;
-  durationDays: number;
-  durationSeconds?: number; // Add optional seconds field
-  status: number;
-  statusText: string;
-  isDefault: boolean;
-  consumedTokens: number;
-  createdAt: string;
-  updatedAt: string;
-  verifiedAt?: string; // Add verifiedAt field
-}
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { usePaymentChannels, PaymentChannel } from "@/hooks/use-payment-channels";
+import { channel } from "@/lib/api";
 
 export const UsageSettings: React.FC = () => {
-  const [channels, setChannels] = useState<PaymentChannel[]>([]);
+  const { channels, activeChannels, isLoading, refetch } = usePaymentChannels();
   const [selectedChannelId, setSelectedChannelId] = useState<string>("");
-  const [isLoading, setIsLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const [debugInfo, setDebugInfo] = useState<object | null>(null);
-  // Removed unpaidTokens state - Usage page now relies on database consumed_tokens
-
-  // Fetch payment channels on component mount
-  useEffect(() => {
-    fetchPaymentChannels();
-  }, []);
-
-  // Remove auto-refresh to avoid unnecessary API calls
-  // Only refresh when user explicitly clicks the refresh button
 
   // Auto-select default channel when channels are loaded
   useEffect(() => {
@@ -51,45 +34,16 @@ export const UsageSettings: React.FC = () => {
     }
   }, [channels, selectedChannelId]);
 
-  const fetchPaymentChannels = async () => {
-    try {
-      setIsLoading(true);
-      const response = await fetch('/api/channel/list');
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch payment channels');
-      }
-      
-      const result = await response.json();
-      setChannels(result.data.channels);
-      
-    } catch (error) {
-      console.error('Error fetching payment channels:', error);
-      alert('Failed to load payment channels');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const handleSetAsDefault = async (channelId: string) => {
     try {
       setActionLoading(true);
       
-      const response = await fetch('/api/channel/set-default', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ channelId }),
+      await channel.setDefault({
+        channelId,
       });
       
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to set as default');
-      }
-      
       alert('Channel set as default successfully!');
-      await fetchPaymentChannels(); // Refresh data
+      await refetch(); // Refresh data
     } catch (error) {
       console.error('Error setting default channel:', error);
       alert('Failed to set as default: ' + (error instanceof Error ? error.message : 'Unknown error'));
@@ -98,23 +52,8 @@ export const UsageSettings: React.FC = () => {
     }
   };
 
-  const fetchDebugInfo = async () => {
-    try {
-      const response = await fetch('/api/debug/payment-status');
-      if (response.ok) {
-        const data = await response.json();
-        setDebugInfo(data.debug);
-        console.log('Debug Info:', data.debug);
-      } else {
-        console.error('Failed to fetch debug info');
-      }
-    } catch (error) {
-      console.error('Error fetching debug info:', error);
-    }
-  };
 
   const selectedChannel = channels.find(channel => channel.channelId === selectedChannelId);
-  const activeChannels = channels.filter(channel => channel.status === 2); // Only active channels
 
   // Calculate usage statistics
   const getUsageStats = (channel: PaymentChannel) => {
@@ -211,127 +150,110 @@ export const UsageSettings: React.FC = () => {
         <h3 className="text-lg font-semibold">Usage Statistics</h3>
         
         <div className="flex items-center space-x-3">
-          {/* Debug Button */}
-          <Button
-            onClick={fetchDebugInfo}
-            size="sm"
-            variant="secondary"
-          >
-            Debug
-          </Button>
           
-          {/* Refresh Button */}
-          <Button
-            onClick={fetchPaymentChannels}
-            disabled={isLoading}
-            size="sm"
-            variant="outline"
-          >
-            {isLoading ? 'Refreshing...' : 'Refresh Data'}
-          </Button>
-          
-          {/* Channel Selector */}
-          <span className="text-sm font-medium text-slate-600 dark:text-slate-400">
-            Channel:
-          </span>
-          <select 
-            value={selectedChannelId} 
-            onChange={(e) => setSelectedChannelId(e.target.value)}
-            className="w-48 px-3 py-2 border border-gray-300 rounded-md text-sm dark:border-gray-600 dark:bg-gray-800"
-          >
-            <option value="">Select a channel</option>
-            {activeChannels.map((channel) => (
-              <option key={channel.channelId} value={channel.channelId}>
-                ...{channel.channelId.slice(-6)} - {channel.amount.toLocaleString()} CKB
-                {channel.isDefault ? ' ⭐' : ''}
-              </option>
-            ))}
-          </select>
+        
+          <Select value={selectedChannelId} onValueChange={setSelectedChannelId}>
+            <SelectTrigger className="w-54 text-center">
+              <SelectValue placeholder="Select a channel">
+                {selectedChannelId && (() => {
+                  const channel = activeChannels.find(c => c.channelId === selectedChannelId);
+                  return channel ? (
+                    <span className="flex items-center justify-center gap-1">
+                      <span>...{channel.channelId.slice(-6)} - {channel.amount.toLocaleString()} CKB</span>
+                      {channel.isDefault && <Star className="h-3 w-3" />}
+                    </span>
+                  ) : 'Select a channel';
+                })()}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {activeChannels.map((channel) => (
+                <SelectItem key={channel.channelId} value={channel.channelId}>
+                  <span className="flex items-center gap-1">
+                    <span>...{channel.channelId.slice(-6)} - {channel.amount.toLocaleString()} CKB</span>
+                    {channel.isDefault && <Star className="h-3 w-3" />}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
       {selectedChannel && stats && (
         <div className="space-y-6">
-          {/* Debug Info Panel */}
-          {debugInfo && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
-              <h4 className="text-sm font-semibold text-red-800 dark:text-red-300 mb-2">
-                Debug Information
-              </h4>
-              <pre className="text-xs text-red-700 dark:text-red-400 overflow-auto">
-                {JSON.stringify(debugInfo, null, 2)}
-              </pre>
-            </div>
-          )}
+       
           {/* Channel Info Header */}
-          <div className="rounded-lg border border-gray-100/30 bg-gradient-to-r from-blue-50 to-indigo-50 p-6 dark:border-slate-700/40 dark:from-blue-900/20 dark:to-indigo-900/20">
-            <div className="flex items-center justify-between mb-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <div className="flex items-center justify-between mb-4 min-h-[2.5rem]">
               <div className="flex items-center space-x-3">
                 <h4 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
                   Channel Overview
                 </h4>
                 {selectedChannel.isDefault && (
-                  <span className="inline-flex rounded-full px-3 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
+                  <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200">
                     <Star className="h-3 w-3 mr-1" />
                     Default
                   </span>
                 )}
               </div>
               
-              {!selectedChannel.isDefault && (
-                <Button
-                  onClick={() => handleSetAsDefault(selectedChannel.channelId)}
-                  disabled={actionLoading}
-                  size="sm"
-                  variant="outline"
-                >
-                  {actionLoading ? 'Setting...' : 'Set as Default'}
-                </Button>
-              )}
+              <div className="flex items-center min-h-[2rem]">
+                {!selectedChannel.isDefault && (
+                  <Button
+                    onClick={() => handleSetAsDefault(selectedChannel.channelId)}
+                    disabled={actionLoading}
+                    size="sm"
+                    variant="outline"
+                  >
+                    {actionLoading ? 'Setting...' : 'Set as Default'}
+                  </Button>
+                )}
+              </div>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-center">
-              <div className="space-y-1">
-                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 text-center">
+              <div className="space-y-2">
+                <p className="text-2xl font-bold text-slate-900 dark:text-white">
                   {stats.totalTokens.toLocaleString()}
                 </p>
-                <p className="text-sm text-slate-600 dark:text-slate-400">Total Tokens</p>
+                <p className="text-sm font-medium tracking-wider text-slate-600 uppercase dark:text-slate-400">Total Tokens</p>
               </div>
-              <div className="space-y-1">
-                <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+              <div className="space-y-2">
+                <p className="text-2xl font-bold text-slate-900 dark:text-white">
                   {stats.remainingTokens.toLocaleString()}
                 </p>
-                <p className="text-sm text-slate-600 dark:text-slate-400">Remaining</p>
+                <p className="text-sm font-medium tracking-wider text-slate-600 uppercase dark:text-slate-400">Remaining</p>
               </div>
-              <div className="space-y-1">
-                <p className={`text-2xl font-bold ${stats.isExpired ? 'text-red-600 dark:text-red-400' : 'text-purple-600 dark:text-purple-400'}`}>
+              <div className="space-y-2">
+                <p className="text-2xl font-bold text-slate-900 dark:text-slate-300">
                   {stats.timeRemainingDisplay}
                 </p>
-                <p className="text-sm text-slate-600 dark:text-slate-400">Time Left</p>
+                <p className="text-sm font-medium tracking-wider text-slate-600 uppercase dark:text-slate-400">Time Left</p>
               </div>
-              <div className="space-y-1">
-                <p className="text-lg font-bold text-orange-600 dark:text-orange-400">
+              <div className="space-y-2">
+                <p className="text-2xl font-bold text-slate-900 dark:text-slate-300">
                   {formatDate(stats.endDate.toISOString())}
                 </p>
-                <p className="text-sm text-slate-600 dark:text-slate-400">Expires On</p>
+                <p className="text-sm font-medium tracking-wider text-slate-600 uppercase dark:text-slate-400">Expires On</p>
               </div>
             </div>
           </div>
 
           {/* Usage Progress */}
-          <div className="rounded-lg border border-gray-100/30 bg-slate-50/50 p-6 dark:border-slate-700/40 dark:bg-slate-800">
+          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
             <div className="mb-4 flex items-center justify-between">
-              <h4 className="text-base font-semibold text-slate-700 dark:text-slate-300">
+              <h4 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
                 Token Usage
               </h4>
-              <span className="text-sm text-slate-600 dark:text-slate-400">
+              <span className="text-sm font-medium text-slate-600 dark:text-slate-400">
                 {stats.consumedTokens.toLocaleString()} / {stats.totalTokens.toLocaleString()} tokens
               </span>
             </div>
             
-            <div className="w-full bg-gray-200 rounded-full h-3 mb-2 dark:bg-gray-700">
+            <div className="w-full bg-slate-200 rounded-full h-3 mb-2 dark:bg-slate-700">
               <div 
-                className="bg-blue-600 h-3 rounded-full transition-all duration-300" 
+                className="bg-slate-600 h-3 rounded-full transition-all duration-300 dark:bg-slate-400" 
                 style={{ width: `${Math.min(stats.usagePercentage, 100)}%` }}
               ></div>
             </div>

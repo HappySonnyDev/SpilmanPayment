@@ -357,3 +357,185 @@ export const generateCkbAddress = async (
     balance,
   };
 };
+
+/**
+ * Payment result interface for payment operations
+ */
+export interface PaymentResult {
+  success: boolean;
+  txHash?: string;
+  error?: string;
+  channelStatus?: string;
+}
+
+/**
+ * Executes the PayNow payment flow - sends funding transaction and confirms payment
+ * This is a shared utility function used by multiple components
+ */
+export const executePayNow = async (paymentData: {
+  channelId: string;
+  fundingTx: Record<string, unknown>;
+  amount: number;
+}): Promise<PaymentResult> => {
+  try {
+    // Get buyer private key from localStorage
+    const buyerPrivateKey = localStorage.getItem("private_key");
+
+    if (!buyerPrivateKey) {
+      throw new Error("Please connect your CKB wallet first in Profile settings.");
+    }
+
+    // Convert fundingTx to CCC transaction
+    const fundingTx = ccc.Transaction.from(paymentData.fundingTx);
+
+    // Create CKB client and buyer signer
+    const { client: cccClient, signer: buyerSigner } = buildClientAndSigner(buyerPrivateKey);
+
+    console.log("Sending funding transaction:", fundingTx);
+
+    // Send the funding transaction
+    const txHash = await buyerSigner.sendTransaction(fundingTx);
+
+    console.log("Funding transaction sent successfully:", txHash);
+    
+    // Call confirm-funding API to verify transaction and activate channel
+    try {
+      const { channel } = await import('@/lib/api');
+      const confirmResult = await channel.confirmFunding({
+        txHash: txHash,
+        channelId: paymentData.channelId,
+      });
+      console.log('Payment confirmed and channel activated:', confirmResult);
+      
+      return {
+        success: true,
+        txHash,
+        channelStatus: (confirmResult as { data?: { statusText?: string } }).data?.statusText,
+      };
+      
+    } catch (confirmError) {
+      console.error('Error confirming payment:', confirmError);
+      return {
+        success: false,
+        txHash,
+        error: `Payment sent successfully but could not verify channel activation. Transaction Hash: ${txHash}. Please contact support if needed.`,
+      };
+    }
+    
+  } catch (error) {
+    console.error('Payment error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown payment error',
+    };
+  }
+};
+
+/**
+ * Executes a refund transaction for a payment channel
+ * This function handles the complete refund flow including multi-signature validation
+ */
+export const executeRefund = async (channelData: {
+  refundTxData: string;
+  sellerSignature: string;
+  durationSeconds?: number;
+  durationDays: number;
+}): Promise<PaymentResult> => {
+  try {
+    // Get buyer private key from localStorage
+    const buyerPrivateKey = localStorage.getItem("private_key");
+    if (!buyerPrivateKey) {
+      throw new Error("Please connect your CKB wallet first in Payment Channel settings.");
+    }
+
+    // Parse the refund transaction (already includes fees from creation time)
+    const refundTxData = JSON.parse(channelData.refundTxData);
+    const refundTx = ccc.Transaction.from(refundTxData);
+    
+    console.log('Using pre-calculated refund transaction:', refundTx);
+    
+    // Get transaction hash for signing
+    const transactionHash = refundTx.hash();
+    
+    // Generate message hash from completed refund transaction
+    const messageHash = getMessageHashFromTx(transactionHash);
+    
+    // Generate buyer signature with timelock (since this is a refund transaction)
+    // Use the same duration that was used during channel creation
+    const durationInSeconds = channelData.durationSeconds || (channelData.durationDays * 24 * 60 * 60);
+    
+    const sinceValue = ccc.numFromBytes(
+      new Uint8Array([
+        0x80,
+        0x00,
+        0x00,
+        0x00, // Relative time lock flag
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+      ]),
+    ) + BigInt(durationInSeconds);
+    
+    console.log(`Generating buyer signature with since value: ${sinceValue}`);
+    console.log(`Duration in seconds: ${durationInSeconds}`);
+    
+    const buyerSignatureBytes = generateCkbSecp256k1SignatureWithSince(
+      buyerPrivateKey,
+      messageHash,
+      sinceValue,
+    );
+    
+    // Convert seller signature from hex to bytes
+    const sellerSignatureHex = channelData.sellerSignature.startsWith('0x') 
+      ? channelData.sellerSignature.slice(2) 
+      : channelData.sellerSignature;
+    
+    if (sellerSignatureHex.length !== 130) {
+      throw new Error(`Invalid seller signature length: ${sellerSignatureHex.length}, expected 130`);
+    }
+    
+    const sellerSignatureBytes = new Uint8Array(
+      sellerSignatureHex.match(/.{2}/g)!.map((byte) => parseInt(byte, 16))
+    );
+    
+    // Validate signature lengths
+    if (buyerSignatureBytes.length !== 65) {
+      throw new Error(`Invalid buyer signature length: ${buyerSignatureBytes.length}, expected 65`);
+    }
+    if (sellerSignatureBytes.length !== 65) {
+      throw new Error(`Invalid seller signature length: ${sellerSignatureBytes.length}, expected 65`);
+    }
+
+    // Create witness data with both signatures (buyer first, seller second)
+    const witnessData = createWitnessData(
+      buyerSignatureBytes,
+      sellerSignatureBytes,
+    );
+
+    // Update the transaction witnesses
+    const witnessArgs = new WitnessArgs(hexFrom(witnessData));
+    refundTx.witnesses[0] = hexFrom(witnessArgs.toBytes());
+    
+    // Submit the transaction to CKB network
+    const client = buildClient("devnet");
+    console.log('Submitting refund transaction with multi-sig:', refundTx);
+    
+    const txHash = await client.sendTransaction(refundTx);
+    
+    console.log('Refund transaction submitted successfully:', txHash);
+    
+    return {
+      success: true,
+      txHash,
+      channelStatus: 'Refunded',
+    };
+    
+  } catch (error) {
+    console.error('Refund error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown refund error',
+    };
+  }
+};

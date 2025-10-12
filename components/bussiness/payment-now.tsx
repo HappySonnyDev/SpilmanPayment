@@ -4,16 +4,7 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import { PaymentSummary } from "@/components/bussiness/payment-summary";
 import { DataDisplay } from "@/components/bussiness/data-display";
-import { buildClientAndSigner } from "@/lib/ckb";
-import { ccc } from "@ckb-ccc/core";
-import { channel } from "@/lib/api";
-
-interface PaymentResult {
-  success: boolean;
-  txHash?: string;
-  error?: string;
-  channelStatus?: string;
-}
+import { executePayNow, PaymentResult } from "@/lib/ckb";
 
 interface PaymentChannelData {
   channelId: string;
@@ -38,67 +29,6 @@ export const PaymentNow: React.FC<PaymentNowProps> = ({
   onBack,
   onPaymentComplete,
 }) => {
-  /**
-   * Executes the PayNow payment flow - sends funding transaction and confirms payment
-   */
-  const executePayNow = async (paymentData: {
-    channelId: string;
-    fundingTx: Record<string, unknown>;
-    amount: number;
-  }): Promise<PaymentResult> => {
-    try {
-      // Get buyer private key from localStorage
-      const buyerPrivateKey = localStorage.getItem("private_key");
-
-      if (!buyerPrivateKey) {
-        throw new Error("Please connect your CKB wallet first in Profile settings.");
-      }
-
-      // Convert fundingTx to CCC transaction
-      const fundingTx = ccc.Transaction.from(paymentData.fundingTx);
-
-      // Create CKB client and buyer signer
-      const { client: cccClient, signer: buyerSigner } = buildClientAndSigner(buyerPrivateKey);
-
-      console.log("Sending funding transaction:", fundingTx);
-
-      // Send the funding transaction
-      const txHash = await buyerSigner.sendTransaction(fundingTx);
-
-      console.log("Funding transaction sent successfully:", txHash);
-      
-      // Call confirm-funding API to verify transaction and activate channel
-      try {
-        const confirmResult = await channel.confirmFunding({
-          txHash: txHash,
-          channelId: paymentData.channelId,
-        });
-        console.log('Payment confirmed and channel activated:', confirmResult);
-        
-        return {
-          success: true,
-          txHash,
-          channelStatus: (confirmResult as { data?: { statusText?: string } }).data?.statusText,
-        };
-        
-      } catch (confirmError) {
-        console.error('Error confirming payment:', confirmError);
-        return {
-          success: false,
-          txHash,
-          error: `Payment sent successfully but could not verify channel activation. Transaction Hash: ${txHash}. Please contact support if needed.`,
-        };
-      }
-      
-    } catch (error) {
-      console.error('Payment error:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown payment error',
-      };
-    }
-  };
-
   const handlePayment = async () => {
     try {
       // Use the shared payment utility
