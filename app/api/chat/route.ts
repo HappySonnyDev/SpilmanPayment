@@ -1,4 +1,3 @@
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import {
   streamText,
   UIMessage,
@@ -10,6 +9,7 @@ import { NextRequest } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { ChunkPaymentRepository, PaymentChannelRepository } from "@/lib/database";
 import { getOrCreateTracker, generateChunkId, countTokens } from "@/lib/token-tracker";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 
 // Initialize OpenRouter provider
 const openrouter = createOpenAICompatible({
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     const userId = user.id;
 
     const { messages }: { messages: UIMessage[] } = await req.json();
-  
+
     // Always generate a new session ID for each API call (each question)
     const currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
@@ -59,6 +59,7 @@ export async function POST(req: NextRequest) {
       execute: ({ writer }) => {
         const result = streamText({
           model: openrouter("qwen/qwen3-14b:free"),
+          // model: openrouter("deepseek/deepseek-r1-0528-qwen3-8b:free"),
           messages: convertToModelMessages(messages),
           onChunk: ({ chunk }) => {
             // Track tokens for each chunk in real-time
@@ -70,10 +71,12 @@ export async function POST(req: NextRequest) {
               // Use session-level tracking to avoid database race conditions
               const potentialSessionTokens = sessionCumulativeTokens + tokens;
               const totalCumulativeTokens = existingCumulativeTokens + potentialSessionTokens;
-              const potentialRemainingBalance = defaultChannel.amount - totalCumulativeTokens;
+              // Convert tokens to CKB for balance check: 1 Token = 100 CKB (since 1 CKB = 0.01 Token)
+              const totalCumulativePaymentCKB = totalCumulativeTokens * 100;
+              const potentialRemainingBalance = defaultChannel.amount - totalCumulativePaymentCKB;
               
               if (potentialRemainingBalance < 0) {
-                console.warn(`Insufficient balance: cumulative payment would be ${totalCumulativeTokens}, channel only has ${defaultChannel.amount}`);
+                console.warn(`Insufficient balance: cumulative payment would be ${totalCumulativePaymentCKB} CKB for ${totalCumulativeTokens} tokens, channel only has ${defaultChannel.amount} CKB`);
                 // Still create the chunk but mark as unpaid for payment tracking
                 try {
                   chunkRepo.createChunkPayment({

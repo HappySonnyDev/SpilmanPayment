@@ -317,40 +317,6 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
     composerRuntime.send();
   };
 
-  // Demo function to simulate chunk received and create in database
-  const simulateChunkReceived = async () => {
-    const chunkId = `chunk_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const tokens = Math.floor(Math.random() * 10) + 1;
-    
-    // Create the chunk in the database first via API
-    try {
-      const response = await fetch('/api/chunks', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          chunkId,
-          sessionId: `demo_session_${Date.now()}`,
-          tokens,
-        }),
-        credentials: 'include',
-      });
-      
-      if (response.ok) {
-        console.log(`🎯 Created demo chunk in database: ${chunkId}`);
-        handleChunkReceived(chunkId, tokens);
-      } else {
-        console.error('Failed to create demo chunk in database');
-        // Still show in UI for demo purposes
-        handleChunkReceived(chunkId, tokens);
-      }
-    } catch (error) {
-      console.error('Error creating demo chunk:', error);
-      // Still show in UI for demo purposes
-      handleChunkReceived(chunkId, tokens);
-    }
-  };
 
   const pendingChunks = chunkPayments.filter(c => c.status === 'pending');
   const payingChunks = chunkPayments.filter(c => c.status === 'paying');

@@ -28,7 +28,6 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { LazyMotion, MotionConfig, domAnimation } from "motion/react";
 import * as m from "motion/react-m";
-import { AuthAwareComposer } from "@/components/assistant-ui/auth-aware-composer";
 import { ChunkAwareComposer } from "@/components/assistant-ui/chunk-aware-composer";
 import { useAuth } from '@/app/context/auth-context';
 import { useAssistantRuntime } from "@assistant-ui/react";
