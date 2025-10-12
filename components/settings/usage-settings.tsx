@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Star, Activity } from "lucide-react";
+import { Star, Activity, Eye, Check, Loader2 } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -11,12 +11,27 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { usePaymentChannels, PaymentChannel } from "@/hooks/use-payment-channels";
+import { useChunkPayment } from "@/hooks/use-chunk-payment";
 import { channel } from "@/lib/api";
+
+interface LatestChunk {
+  chunkId: string;
+  tokens: number;
+  consumedTokens: number;
+  remainingTokens: number;
+  timestamp: string;
+  isPaid: boolean;
+  transactionData?: Record<string, unknown>;
+  buyerSignature?: string;
+}
 
 export const UsageSettings: React.FC = () => {
   const { channels, activeChannels, isLoading, refetch } = usePaymentChannels();
+  const { payForChunk, isProcessing } = useChunkPayment();
   const [selectedChannelId, setSelectedChannelId] = useState<string>("");
   const [actionLoading, setActionLoading] = useState(false);
+  const [latestChunk, setLatestChunk] = useState<LatestChunk | null>(null);
+  const [chunkLoading, setChunkLoading] = useState(false);
 
   // Auto-select default channel when channels are loaded
   useEffect(() => {
@@ -34,6 +49,38 @@ export const UsageSettings: React.FC = () => {
     }
   }, [channels, selectedChannelId]);
 
+  // Fetch latest chunk when selected channel changes
+  useEffect(() => {
+    if (selectedChannelId) {
+      fetchLatestChunk(selectedChannelId);
+    }
+  }, [selectedChannelId]);
+
+  const fetchLatestChunk = async (channelId: string) => {
+    try {
+      setChunkLoading(true);
+      const response = await fetch(`/api/chunks/latest?channel_id=${channelId}`, {
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        if (result.data.hasLatestChunk) {
+          setLatestChunk(result.data.latestChunk);
+        } else {
+          setLatestChunk(null);
+        }
+      } else {
+        setLatestChunk(null);
+      }
+    } catch (error) {
+      console.error('Failed to fetch latest chunk:', error);
+      setLatestChunk(null);
+    } finally {
+      setChunkLoading(false);
+    }
+  };
+
   const handleSetAsDefault = async (channelId: string) => {
     try {
       setActionLoading(true);
@@ -49,6 +96,24 @@ export const UsageSettings: React.FC = () => {
       alert('Failed to set as default: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handlePayForChunk = async (chunkId: string) => {
+    try {
+      const result = await payForChunk(chunkId);
+      console.log(`✅ Successfully paid for chunk: ${chunkId} (${result.tokens} tokens)`);
+      
+      // Refresh the latest chunk data after payment
+      if (selectedChannelId) {
+        await fetchLatestChunk(selectedChannelId);
+      }
+      
+      alert('Payment successful!');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Payment failed';
+      console.error(`❌ Failed to pay for chunk ${chunkId}:`, error);
+      alert(`Payment failed: ${errorMessage}`);
     }
   };
 
@@ -265,6 +330,149 @@ export const UsageSettings: React.FC = () => {
               </span>
               <span>{stats.totalTokens.toLocaleString()}</span>
             </div>
+          </div>
+
+          {/* Latest Transaction - Separate Card */}
+          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <div className="mb-4 flex items-center justify-between">
+              <h4 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
+                Latest Transaction
+              </h4>
+              {chunkLoading && (
+                <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+              )}
+            </div>
+            
+            {latestChunk ? (
+              <div className="space-y-4">
+                {/* Basic Information Grid */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                      Chunk ID
+                    </label>
+                    <p className="text-sm font-mono bg-slate-100 dark:bg-slate-700 p-2 rounded">
+                      {latestChunk.chunkId}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                      Tokens Consumed
+                    </label>
+                    <p className="text-sm bg-slate-100 dark:bg-slate-700 p-2 rounded">
+                      {latestChunk.tokens} tokens
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                      Payment Status
+                    </label>
+                    <p className="text-sm bg-slate-100 dark:bg-slate-700 p-2 rounded">
+                      {latestChunk.isPaid ? (
+                        <span className="inline-flex items-center text-green-600">
+                          <Check className="h-4 w-4 mr-1" />
+                          Paid
+                        </span>
+                      ) : (
+                        <span className="text-orange-600">Unpaid</span>
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                      Timestamp
+                    </label>
+                    <p className="text-sm bg-slate-100 dark:bg-slate-700 p-2 rounded">
+                      {new Date(latestChunk.timestamp).toLocaleString('en-US', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        timeZoneName: 'short'
+                      })}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                      Consumed Tokens
+                    </label>
+                    <p className="text-sm bg-slate-100 dark:bg-slate-700 p-2 rounded">
+                      {latestChunk.consumedTokens.toLocaleString()} Tokens
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                      Remaining Tokens
+                    </label>
+                    <p className="text-sm bg-slate-100 dark:bg-slate-700 p-2 rounded">
+                      {latestChunk.remainingTokens.toLocaleString()} Tokens
+                    </p>
+                  </div>
+                </div>
+                
+                {/* Buyer Signature - Only show if available */}
+                {latestChunk.buyerSignature && (
+                  <div className="w-full min-w-0">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                      Buyer Signature
+                    </label>
+                    <div className="w-full overflow-hidden">
+                      <p className="text-xs font-mono bg-slate-100 dark:bg-slate-700 p-3 rounded whitespace-pre-wrap break-all word-break-break-all overflow-wrap-anywhere max-w-full">
+                        {latestChunk.buyerSignature}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Transaction Data - Only show if paid and has transaction data */}
+                {latestChunk.isPaid && latestChunk.transactionData && (
+                  <div className="w-full min-w-0">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                      Transaction Data
+                    </label>
+                    <div className="w-full overflow-hidden">
+                      <pre className="text-xs bg-slate-100 dark:bg-slate-700 p-3 rounded whitespace-pre-wrap break-all word-break-break-all overflow-wrap-anywhere max-w-full">
+                        {JSON.stringify(latestChunk.transactionData, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Pay Button - Only show if unpaid */}
+                {!latestChunk.isPaid && (
+                  <div className="flex justify-end pt-2">
+                    <Button
+                      onClick={() => handlePayForChunk(latestChunk.chunkId)}
+                      size="sm"
+                      variant="default"
+                      className="bg-orange-600 hover:bg-orange-700 text-white"
+                      disabled={isProcessing}
+                    >
+                      {isProcessing ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          Processing...
+                        </>
+                      ) : (
+                        'Pay Now'
+                      )}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-6 border border-slate-200 dark:border-slate-700 text-center">
+                <Activity className="mx-auto h-8 w-8 text-slate-400 mb-3" />
+                <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">
+                  No chunk transactions found for this channel.
+                </p>
+                <p className="text-xs text-slate-400 dark:text-slate-500">
+                  Start a conversation to see transaction records here.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Channel Details */}

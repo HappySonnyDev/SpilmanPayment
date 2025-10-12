@@ -1,4 +1,3 @@
-import { ComposerPrimitive, ThreadPrimitive, useComposerRuntime, useAssistantRuntime } from "@assistant-ui/react";
 import { Button } from "@/components/ui/button";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { ComposerAddAttachment, ComposerAttachments } from "@/components/assistant-ui/attachment";
@@ -7,6 +6,12 @@ import { useChunkPayment } from '@/hooks/use-chunk-payment';
 import { AlertTriangle, Coins, X, ArrowUpIcon, Square, Check, Loader2, Eye } from "lucide-react";
 import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import {
+  ComposerPrimitive,
+  ThreadPrimitive,
+  useComposerRuntime,
+  useAssistantRuntime
+} from '@assistant-ui/react';
 
 interface ChunkPaymentData {
   chunkId: string;
@@ -53,6 +58,7 @@ interface PaymentRecord {
   consumedTokens: number;
   remainingTokens: number;
   timestamp: string;
+  isPaid?: boolean; // Add isPaid field to track payment status
   transactionData?: Record<string, unknown>;
 }
 
@@ -126,7 +132,7 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
     }
   }, [user, autoPayEnabled]);
 
-  // Fetch current payment channel data on component mount
+  // Fetch current payment channel data and latest chunk on component mount
   useEffect(() => {
     if (!user) return;
     
@@ -155,12 +161,36 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
               channelTotalTokens: totalTokens
             });
             
-            // Payment history will only show real chunk payment transactions
-            // Current channel status is displayed in the header section
+            // Fetch the latest chunk payment record
+            const latestChunkResponse = await fetch('/api/chunks/latest', {
+              credentials: 'include'
+            });
+            
+            if (latestChunkResponse.ok) {
+              const latestChunkResult = await latestChunkResponse.json();
+              
+              if (latestChunkResult.data.hasLatestChunk) {
+                const latestChunk = latestChunkResult.data.latestChunk;
+                
+                // Add the latest chunk to payment records
+                const initialRecord: PaymentRecord = {
+                  chunkId: latestChunk.chunkId,
+                  tokens: latestChunk.tokens,
+                  consumedTokens: latestChunk.consumedTokens,
+                  remainingTokens: latestChunk.remainingTokens,
+                  timestamp: latestChunk.timestamp,
+                  transactionData: latestChunk.transactionData,
+                  isPaid: latestChunk.isPaid
+                };
+                
+                setPaymentRecords([initialRecord]);
+                console.log('📝 Loaded latest chunk record:', latestChunk.chunkId, 'isPaid:', latestChunk.isPaid);
+              }
+            }
           }
         }
       } catch (error) {
-        console.error('Failed to fetch channel data:', error);
+        console.error('Failed to fetch channel data or latest chunk:', error);
       }
     };
     
@@ -207,6 +237,7 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
         consumedTokens: Math.floor(paidAmount * 0.01),
         remainingTokens: Math.floor(remainingAmount * 0.01),
         timestamp,
+        isPaid: true, // Mark as paid since this is a payment success event
         transactionData
       };
       
@@ -235,14 +266,41 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
     setTotalPendingTokens(prev => prev + tokens);
 
     // Auto-pay if enabled
-    if (autoPayEnabled && user) {
-      await handlePayForChunk(chunkId);
+    if (autoPayEnabled) {
+      try {
+        setChunkPayments(prev =>
+          prev.map(chunk =>
+            chunk.chunkId === chunkId
+              ? { ...chunk, status: 'paying' }
+              : chunk
+          )
+        );
+
+        await payForChunk(chunkId);
+        
+        setChunkPayments(prev =>
+          prev.map(chunk =>
+            chunk.chunkId === chunkId
+              ? { ...chunk, status: 'paid' }
+              : chunk
+          )
+        );
+        
+        setTotalPendingTokens(prev => prev - tokens);
+      } catch (error) {
+        setChunkPayments(prev =>
+          prev.map(chunk =>
+            chunk.chunkId === chunkId
+              ? { ...chunk, status: 'failed', error: error instanceof Error ? error.message : 'Payment failed' }
+              : chunk
+          )
+        );
+      }
     }
   };
 
+  // Handle manual payment for a specific chunk
   const handlePayForChunk = async (chunkId: string) => {
-    console.log(`🔄 Attempting to pay for chunk: ${chunkId}`);
-    
     setChunkPayments(prev =>
       prev.map(chunk =>
         chunk.chunkId === chunkId
@@ -271,6 +329,7 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
         consumedTokens: paymentChannelInfo?.consumedTokens || 0,
         remainingTokens: result.remainingTokens,
         timestamp: new Date().toISOString(),
+        isPaid: true, // Mark as paid since payment was successful
         transactionData: result.transactionData ? (result.transactionData as unknown as Record<string, unknown>) : undefined
       };
       
@@ -295,29 +354,44 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
     }
   };
 
-  const handleSend = async () => {
+  // Handle authentication before submission
+  const handleAuthCheck = useCallback(() => {
     if (!user) {
-      const state = composerRuntime.getState();
-      if (state.text.trim()) {
-        setPendingMessage(state.text.trim());
-        composerRuntime.reset();
-        onAuthRequired();
-      }
-      return;
+      onAuthRequired();
+      return false;
     }
-
-    // Clear previous chunk payment history for new conversation
+    
+    const sessionId = onNewQuestion();
+    
+    // Set streaming as active
+    setIsStreamingActive(true);
+    
+    // Clear chunk payments for new session
     setChunkPayments([]);
     setTotalPendingTokens(0);
     
-    // Generate new session ID
-    const newSessionId = onNewQuestion();
+    // Set streaming as inactive after a reasonable delay
+    setTimeout(() => {
+      setIsStreamingActive(false);
+    }, 10000); // 10 seconds timeout
     
-    // Send the message
-    composerRuntime.send();
-  };
+    return true;
+  }, [user, onAuthRequired, onNewQuestion]);
+  
+  // Listen for submit events
+  useEffect(() => {
+    const runtime = composerRuntime;
+    if (runtime && runtime.subscribe) {
+      return runtime.subscribe(() => {
+        const state = runtime.getState();
+        if (state.text && !user) {
+          handleAuthCheck();
+        }
+      });
+    }
+  }, [composerRuntime, handleAuthCheck, user]);
 
-
+  // Group chunks by status for display
   const pendingChunks = chunkPayments.filter(c => c.status === 'pending');
   const payingChunks = chunkPayments.filter(c => c.status === 'paying');
   const failedChunks = chunkPayments.filter(c => c.status === 'failed');
@@ -367,12 +441,38 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
                     <span className="text-purple-600 dark:text-purple-400">
                       Remaining: {record.remainingTokens.toLocaleString()} Tokens
                     </span>
+                    {record.isPaid === false && (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400">
+                        Unpaid
+                      </span>
+                    )}
+                    {record.isPaid === true && (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400">
+                        <Check className="h-3 w-3 mr-1" />
+                        Paid
+                      </span>
+                    )}
                   </div>
                   
                   <div className="flex items-center gap-2">
                     <span className="text-gray-500 dark:text-gray-400">
                       {new Date(record.timestamp).toLocaleTimeString()}
                     </span>
+                    
+                    {/* Show Pay button for unpaid records */}
+                    {record.isPaid === false && (
+                      <Button
+                        onClick={() => handlePayForChunk(record.chunkId)}
+                        size="sm"
+                        variant="default"
+                        className="h-6 px-2 text-xs bg-orange-600 hover:bg-orange-700 text-white"
+                        disabled={isProcessing}
+                      >
+                        {isProcessing ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Pay'}
+                      </Button>
+                    )}
+                    
+                    {/* Show transaction details button for all records */}
                     <Button
                       onClick={() => setSelectedRecord(record)}
                       size="sm"
@@ -471,30 +571,25 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
           rows={1}
           autoFocus
           aria-label="Message input"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              handleSend();
-            }
-          }}
         />
         
         <div className="aui-composer-action-wrapper relative mx-1 mt-2 mb-2 flex items-center justify-between">
           <ComposerAddAttachment />
 
           <ThreadPrimitive.If running={false}>
-            <TooltipIconButton
-              tooltip="Send message"
-              side="bottom"
-              type="button"
-              variant="default"
-              size="icon"
-              className="aui-composer-send size-[34px] rounded-full p-1"
-              aria-label="Send message"
-              onClick={handleSend}
-            >
-              <ArrowUpIcon className="aui-composer-send-icon size-5" />
-            </TooltipIconButton>
+            <ComposerPrimitive.Send asChild>
+              <TooltipIconButton
+                tooltip="Send message"
+                side="bottom"
+                type="button"
+                variant="default"
+                size="icon"
+                className="aui-composer-send size-[34px] rounded-full p-1"
+                aria-label="Send message"
+              >
+                <ArrowUpIcon className="aui-composer-send-icon size-5" />
+              </TooltipIconButton>
+            </ComposerPrimitive.Send>
           </ThreadPrimitive.If>
 
           <ThreadPrimitive.If running>
@@ -551,21 +646,24 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Consumed Tokens
+                    Payment Status
                   </label>
                   <p className="text-sm bg-gray-100 dark:bg-gray-700 p-2 rounded">
-                    {selectedRecord.consumedTokens.toLocaleString()} Tokens
+                    {selectedRecord.isPaid === true && (
+                      <span className="inline-flex items-center text-green-600">
+                        <Check className="h-4 w-4 mr-1" />
+                        Paid
+                      </span>
+                    )}
+                    {selectedRecord.isPaid === false && (
+                      <span className="text-orange-600">Unpaid</span>
+                    )}
+                    {selectedRecord.isPaid === undefined && (
+                      <span className="text-gray-500">Status unknown</span>
+                    )}
                   </p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Remaining Tokens
-                  </label>
-                  <p className="text-sm bg-gray-100 dark:bg-gray-700 p-2 rounded">
-                    {selectedRecord.remainingTokens.toLocaleString()} Tokens
-                  </p>
-                </div>
-                <div className="col-span-2">
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Timestamp
                   </label>
@@ -577,8 +675,7 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
                       hour: '2-digit',
                       minute: '2-digit',
                       second: '2-digit',
-                      hour12: false,
-                      timeZone: 'Asia/Shanghai'
+                      timeZoneName: 'short'
                     })}
                   </p>
                 </div>
@@ -589,20 +686,11 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Transaction Data
                   </label>
-                  <pre className="text-xs bg-gray-100 dark:bg-gray-700 p-3 rounded overflow-x-auto whitespace-pre-wrap break-words">
+                  <pre className="text-xs bg-gray-100 dark:bg-gray-700 p-3 rounded overflow-x-auto whitespace-pre-wrap">
                     {JSON.stringify(selectedRecord.transactionData, null, 2)}
                   </pre>
                 </div>
               )}
-            </div>
-            
-            <div className="flex justify-end mt-6">
-              <Button
-                onClick={() => setSelectedRecord(null)}
-                variant="outline"
-              >
-                Close
-              </Button>
             </div>
           </div>
         </div>,

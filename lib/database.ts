@@ -1307,6 +1307,17 @@ export class ChunkPaymentRepository {
     const result = stmt.get(userId) as { session_id: string } | null;
     return result?.session_id || null;
   }
+
+  // Get the latest chunk payment for a user's default payment channel
+  getLatestChunkForUserChannel(userId: number, channelId: string): ChunkPayment | null {
+    const stmt = this.db.prepare(`
+      SELECT * FROM chunk_payments 
+      WHERE user_id = ? AND channel_id = ? 
+      ORDER BY cumulative_payment DESC 
+      LIMIT 1
+    `);
+    return stmt.get(userId, channelId) as ChunkPayment | null;
+  }
 }
 
 // Scheduled Task Log database operations
