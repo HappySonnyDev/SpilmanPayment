@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PaymentChannelRepository, PAYMENT_CHANNEL_STATUS } from '@/lib/database';
+import { PaymentChannelRepository, PAYMENT_CHANNEL_STATUS } from '@/lib/server/database';
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { channelId: string } }
+  { params }: { params: Promise<{ channelId: string }> }
 ) {
   try {
-    const channelId = parseInt(params.channelId);
+    const { channelId: channelIdParam } = await params;
+    const channelId = parseInt(channelIdParam);
     const { status } = await request.json();
 
     if (isNaN(channelId)) {

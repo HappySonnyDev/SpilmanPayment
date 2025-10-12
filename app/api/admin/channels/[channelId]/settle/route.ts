@@ -4,20 +4,21 @@ import {
   ChunkPaymentRepository,
   PAYMENT_CHANNEL_STATUS,
   ChunkPayment,
-} from "@/lib/database";
+} from "@/lib/server/database";
 import { ccc, hexFrom, WitnessArgs } from "@ckb-ccc/core";
 import {
   buildClient,
   generateCkbSecp256k1Signature,
   createWitnessData,
-} from "@/lib/ckb";
+} from "@/lib/shared/ckb";
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { channelId: string } }
+  { params }: { params: Promise<{ channelId: string }> }
 ) {
   try {
-    const channelId = parseInt(params.channelId);
+    const { channelId: channelIdParam } = await params;
+    const channelId = parseInt(channelIdParam);
 
     if (isNaN(channelId)) {
       return NextResponse.json(
@@ -47,7 +48,7 @@ export async function POST(
 
     // Get all chunk payments for this channel to find the latest one
     // 使用和用户结算完全相同的逻辑
-    const { getDatabase } = await import("@/lib/database");
+    const { getDatabase } = await import("@/lib/server/database");
     const db = getDatabase();
     const chunkPayments = db
       .prepare(

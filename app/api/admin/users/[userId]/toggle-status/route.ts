@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { UserRepository } from '@/lib/database';
+import { UserRepository } from '@/lib/server/database';
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { userId: string } }
+  { params }: { params: Promise<{ userId: string }> }
 ) {
   try {
-    const userId = parseInt(params.userId);
+    const { userId: userIdParam } = await params;
+    const userId = parseInt(userIdParam);
     const { is_active } = await request.json();
 
     if (isNaN(userId)) {

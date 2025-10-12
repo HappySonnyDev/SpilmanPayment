@@ -14,7 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-import { formatDbTimeToLocal } from "@/lib/date-utils";
+import { formatDbTimeToLocal } from "@/lib/shared/date-utils";
 
 // Simple Card components
 interface CardProps {

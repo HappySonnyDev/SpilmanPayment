@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { AuthService, setAuthCookie, validatePublicKey } from "@/lib/auth";
+import { AuthService, setAuthCookie, validatePublicKey } from "@/lib/server/auth";
 
 
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ScheduledTaskLogRepository } from '@/lib/database';
+import { ScheduledTaskLogRepository } from '@/lib/server/database';
 
 export async function GET(request: NextRequest) {
   try {

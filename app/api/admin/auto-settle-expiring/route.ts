@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PaymentChannelRepository, ChunkPaymentRepository, getDatabase, PAYMENT_CHANNEL_STATUS, ChunkPayment, ScheduledTaskLogRepository } from '@/lib/database';
+import { PaymentChannelRepository, ChunkPaymentRepository, getDatabase, PAYMENT_CHANNEL_STATUS, ChunkPayment, ScheduledTaskLogRepository } from '@/lib/server/database';
 import { ccc, hexFrom, WitnessArgs } from "@ckb-ccc/core";
-import { buildClient, generateCkbSecp256k1Signature, createWitnessData, jsonStr } from "@/lib/ckb";
+import { buildClient, generateCkbSecp256k1Signature, createWitnessData, jsonStr } from "@/lib/shared/ckb";
 
 export async function POST(request: NextRequest) {
   const startTime = new Date();

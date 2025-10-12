@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { AuthService } from '@/lib/auth';
+import { AuthService } from '@/lib/server/auth';
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
         const payload = await authService.verifyJWTTokenForPublicKey(token);
         if (payload?.publicKey) {
           // Find user by public key from JWT token
-          const userRepo = new (await import('@/lib/database')).UserRepository();
+          const userRepo = new (await import('@/lib/server/database')).UserRepository();
           user = userRepo.getUserByPublicKey(payload.publicKey);
         }
       }
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     //   const publicKeyHeader = request.headers.get('x-public-key');
     //   if (publicKeyHeader) {
     //     // Find user by public key
-    //     const userRepo = new (await import('@/lib/database')).UserRepository();
+    //     const userRepo = new (await import('@/lib/server/database')).UserRepository();
     //     user = userRepo.getUserByPublicKey(publicKeyHeader);
     //   }
     // }

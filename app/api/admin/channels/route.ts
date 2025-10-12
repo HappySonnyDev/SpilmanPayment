@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PaymentChannelRepository, UserRepository, PaymentChannel, PAYMENT_CHANNEL_STATUS } from '@/lib/database';
+import { PaymentChannelRepository, UserRepository, PaymentChannel, PAYMENT_CHANNEL_STATUS } from '@/lib/server/database';
 
 // Helper function to get status text
 function getStatusText(status: number): string {

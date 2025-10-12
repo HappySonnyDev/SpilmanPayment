@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cronManager } from '@/lib/cron-manager';
+import { cronManager } from '@/lib/server/cron-manager';
 
 export async function GET(request: NextRequest) {
   try {

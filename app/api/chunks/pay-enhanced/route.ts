@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/auth';
-import { ChunkPaymentRepository, PaymentChannelRepository } from '@/lib/database';
+import { requireAuth } from '@/lib/server/auth';
+import { ChunkPaymentRepository, PaymentChannelRepository } from '@/lib/server/database';
 
 interface PaymentTransactionData {
   transaction: Record<string, unknown>;

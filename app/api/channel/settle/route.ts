@@ -4,15 +4,15 @@ import {
   ChunkPaymentRepository,
   PAYMENT_CHANNEL_STATUS,
   ChunkPayment,
-} from "@/lib/database";
-import { requireAuth } from "@/lib/auth";
+} from "@/lib/server/database";
+import { requireAuth } from "@/lib/server/auth";
 import { ccc, hexFrom, WitnessArgs } from "@ckb-ccc/core";
 import {
   buildClient,
   generateCkbSecp256k1Signature,
   createWitnessData,
   jsonStr,
-} from "@/lib/ckb";
+} from "@/lib/shared/ckb";
 
 export async function POST(request: NextRequest) {
   try {

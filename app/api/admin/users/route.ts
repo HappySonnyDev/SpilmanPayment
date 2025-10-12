@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { UserRepository, User } from '@/lib/database';
+import { UserRepository, User } from '@/lib/server/database';
 
 export async function GET(request: NextRequest) {
   try {

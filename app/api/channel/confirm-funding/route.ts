@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/auth';
-import { PaymentChannelRepository, PAYMENT_CHANNEL_STATUS } from '@/lib/database';
-import { buildClient } from '@/lib/ckb';
+import { requireAuth } from '@/lib/server/auth';
+import { PaymentChannelRepository, PAYMENT_CHANNEL_STATUS } from '@/lib/server/database';
+import { buildClient } from '@/lib/shared/ckb';
 import { ccc } from '@ckb-ccc/core';
 
 // Request body interface

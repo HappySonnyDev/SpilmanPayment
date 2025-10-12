@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PaymentChannelRepository, ScheduledTaskLogRepository, PAYMENT_CHANNEL_STATUS } from '@/lib/database';
+import { PaymentChannelRepository, ScheduledTaskLogRepository, PAYMENT_CHANNEL_STATUS } from '@/lib/server/database';
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();

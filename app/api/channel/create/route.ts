@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/auth";
+import { requireAuth } from "@/lib/server/auth";
 import {
   PaymentChannelRepository,
   PAYMENT_CHANNEL_STATUS,
-} from "@/lib/database";
+} from "@/lib/server/database";
 import {
   getMessageHashFromTx,
   generateCkbSecp256k1SignatureWithSince,
   jsonStr,
   createPlaceholderWitness,
-} from "@/lib/ckb";
+} from "@/lib/shared/ckb";
 import { ccc } from "@ckb-ccc/core";
 
 

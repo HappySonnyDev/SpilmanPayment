@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
-import { requireAuth } from '@/lib/auth';
-import { ChunkPaymentRepository, PaymentChannelRepository } from '@/lib/database';
-import { withAuth, ApiResponse } from '@/lib/api-middleware';
+import { requireAuth } from '@/lib/server/auth';
+import { ChunkPaymentRepository, PaymentChannelRepository } from '@/lib/server/database';
+import { withAuth, ApiResponse } from '@/lib/server/api-middleware';
 
 async function getLatestChunkHandler(req: NextRequest) {
   // Require authentication

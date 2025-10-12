@@ -6,9 +6,9 @@ import {
   createUIMessageStreamResponse
 } from "ai";
 import { NextRequest } from "next/server";
-import { requireAuth } from "@/lib/auth";
-import { ChunkPaymentRepository, PaymentChannelRepository } from "@/lib/database";
-import { getOrCreateTracker, generateChunkId, countTokens } from "@/lib/token-tracker";
+import { requireAuth } from "@/lib/server/auth";
+import { ChunkPaymentRepository, PaymentChannelRepository } from "@/lib/server/database";
+import { getOrCreateTracker, generateChunkId, countTokens } from "@/lib/client/token-tracker";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 
 // Initialize OpenRouter provider

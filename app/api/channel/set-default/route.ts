@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/auth';
-import { PaymentChannelRepository, PAYMENT_CHANNEL_STATUS } from '@/lib/database';
+import { requireAuth } from '@/lib/server/auth';
+import { PaymentChannelRepository, PAYMENT_CHANNEL_STATUS } from '@/lib/server/database';
 
 // Request body interface
 interface SetDefaultRequest {

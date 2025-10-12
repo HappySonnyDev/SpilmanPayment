@@ -4,19 +4,19 @@ import {
   useChatRuntime,
   AssistantChatTransport,
 } from "@assistant-ui/react-ai-sdk";
-import { ThreadWithCustomComposer } from "@/components/assistant-ui/thread-with-custom-composer";
+import { ThreadWithCustomComposer } from "@/features/assistant/components/thread-with-custom-composer";
 import {
   SidebarInset,
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { ThreadListSidebar } from "@/components/assistant-ui/threadlist-sidebar";
-import { useAuth } from "@/app/context/auth-context";
-import { AuthDialog } from "@/components/auth/auth-dialog";
-import { UserSettingsDialog } from "@/components/ui/user-settings-dialog";
+import { ThreadListSidebar } from "@/features/assistant/components/threadlist-sidebar";
+import { useAuth } from "@/features/auth/components/auth-context";
+import { AuthDialog } from "@/features/auth/components/auth-dialog";
+import { UserSettingsDialog } from "@/features/settings/components/user-settings-dialog";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { UserDropdown } from "@/components/bussiness/user-dropdown";
+import { UserDropdown } from "@/components/shared/user-dropdown";
 
 export const Assistant = () => {
   const { user, logout } = useAuth();

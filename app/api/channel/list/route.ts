@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/auth';
-import { PaymentChannelRepository, PAYMENT_CHANNEL_STATUS } from '@/lib/database';
-import { withAuth, ApiResponse } from '@/lib/api-middleware';
+import { requireAuth } from '@/lib/server/auth';
+import { PaymentChannelRepository, PAYMENT_CHANNEL_STATUS } from '@/lib/server/database';
+import { withAuth, ApiResponse } from '@/lib/server/api-middleware';
 
 // Helper function to get status text
 function getStatusText(status: number): string {

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { requireAuthMiddleware } from './lib/auth-middleware';
+import { requireAuthMiddleware } from '@/lib/server/auth-middleware';
 
 // Define routes that should be excluded from authentication
 const publicRoutes = [
