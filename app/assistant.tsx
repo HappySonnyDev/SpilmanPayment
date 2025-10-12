@@ -1,5 +1,4 @@
 "use client";
-
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
 import {
   useChatRuntime,
@@ -12,20 +11,15 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { ThreadListSidebar } from "@/components/assistant-ui/threadlist-sidebar";
-import {
-  Breadcrumb,
-} from "@/components/ui/breadcrumb";
 import { useAuth } from "@/app/context/auth-context";
 import { AuthDialog } from "@/components/auth/auth-dialog";
 import { UserSettingsDialog } from "@/components/ui/user-settings-dialog";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { UserDropdown } from "@/components/bussiness/user-dropdown";
-import { useChunkPayment } from "@/hooks/use-chunk-payment";
 
 export const Assistant = () => {
   const { user, logout } = useAuth();
-  const { payForChunk } = useChunkPayment();
   const [showAuthDialog, setShowAuthDialog] = useState(false);
   const [pendingMessage, setPendingMessage] = useState('');
   const [showUserSettings, setShowUserSettings] = useState(false);
@@ -33,7 +27,6 @@ export const Assistant = () => {
 
   // Handle chunk payment data from streaming response
   const handleChunkPaymentData = async (dataPart: { type: `data-${string}`; id?: string; data: unknown }) => {
-    console.log('🎯 Received chunk payment data:', dataPart);
     
     if (dataPart.type === 'data-chunk-payment') {
       const data = dataPart.data as { 
@@ -48,40 +41,21 @@ export const Assistant = () => {
       };
       const { chunkId, tokens, cumulativePayment, remainingBalance, channelId, channelTotalAmount } = data;
       
-      console.log(`📦 Processing chunk arrival: ${chunkId} (${tokens} tokens)`);
-      console.log(`💰 Payment Channel Status:`);
-      console.log(`   - Channel ID: ${channelId}`);
-      console.log(`   - Total Amount: ${channelTotalAmount} CKB`);
-      console.log(`   - Cumulative Payment: ${cumulativePayment} CKB`);
-      console.log(`   - Remaining Balance: ${remainingBalance} CKB`);
-      
-      // Emit custom event for RealTimeTokenMonitor
-      const tokenUpdateEvent = new CustomEvent('tokenStreamUpdate', {
-        detail: {
-          chunkId,
-          tokens,
-          cumulativePayment,
-          remainingBalance,
-          channelId,
-          channelTotalAmount
-        }
-      });
-      window.dispatchEvent(tokenUpdateEvent);
-      
-      // Emit newChunkArrived event for chunk-aware-composer to handle
-      const newChunkEvent = new CustomEvent('newChunkArrived', {
+      // Emit consolidated event for chunk-aware-composer and token monitor
+      const chunkPaymentUpdateEvent = new CustomEvent('chunkPaymentUpdate', {
         detail: {
           chunkId,
           tokens,
           timestamp: new Date().toISOString(),
           cumulativePayment,
           remainingBalance,
-          channelId
+          channelId,
+          channelTotalAmount,
+          isArrival: true
         }
       });
-      window.dispatchEvent(newChunkEvent);
+      window.dispatchEvent(chunkPaymentUpdateEvent);
       
-      console.log(`🆕 Emitted newChunkArrived event for chunk: ${chunkId}`);
     }
   };
 

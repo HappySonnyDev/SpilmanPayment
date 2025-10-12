@@ -7,7 +7,6 @@ import {
   ErrorPrimitive,
 } from "@assistant-ui/react";
 import {
-  ArrowDownIcon,
   ArrowUpIcon,
   CheckIcon,
   ChevronLeftIcon,
@@ -128,7 +127,6 @@ const AuthAwareSuggestions: React.FC<{ onAuthRequired: () => void; setPendingMes
 
 export const ThreadWithCustomComposer: FC<ThreadWithCustomComposerProps> = ({
   onAuthRequired,
-  pendingMessage,
   setPendingMessage,
   onNewQuestion,
 }) => {

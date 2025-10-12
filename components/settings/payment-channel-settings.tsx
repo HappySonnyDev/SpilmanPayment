@@ -190,37 +190,37 @@ export const PaymentChannelSettings: React.FC = () => {
     switch (status) {
       case 1: // Inactive
         return (
-          <span className={`${baseClasses} bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400`}>
+          <span className={`${baseClasses} bg-gray-200 text-gray-800 dark:bg-gray-700/30 dark:text-gray-300`}>
             {statusText}
           </span>
         );
       case 2: // Active
         return (
-          <span className={`${baseClasses} bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400`}>
+          <span className={`${baseClasses} bg-gray-200 text-gray-800 dark:bg-gray-700/30 dark:text-gray-300`}>
             {statusText}
           </span>
         );
       case 3: // Invalid
         return (
-          <span className={`${baseClasses} bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400`}>
+          <span className={`${baseClasses} bg-gray-200 text-gray-800 dark:bg-gray-700/30 dark:text-gray-300`}>
             {statusText}
           </span>
         );
       case 4: // Settled
         return (
-          <span className={`${baseClasses} bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400`}>
+          <span className={`${baseClasses} bg-gray-200 text-gray-800 dark:bg-gray-700/30 dark:text-gray-300`}>
             {statusText}
           </span>
         );
       case 5: // Expired
         return (
-          <span className={`${baseClasses} bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400`}>
+          <span className={`${baseClasses} bg-gray-200 text-gray-800 dark:bg-gray-700/30 dark:text-gray-300`}>
             {statusText}
           </span>
         );
       default:
         return (
-          <span className={`${baseClasses} bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400`}>
+          <span className={`${baseClasses} bg-gray-200 text-gray-800 dark:bg-gray-700/30 dark:text-gray-300`}>
             {statusText}
           </span>
         );
@@ -259,7 +259,7 @@ export const PaymentChannelSettings: React.FC = () => {
         <Button
           onClick={() => handlePayNow(channel)}
           disabled={isLoading}
-          className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 text-sm"
+          className="bg-black hover:bg.gray-800 text-white px-4 py-2 text-sm dark:bg-white dark:hover:bg-gray-200 dark:text-black"
           size="sm"
         >
           {isLoading ? 'Processing...' : 'Pay Now'}
@@ -271,7 +271,7 @@ export const PaymentChannelSettings: React.FC = () => {
           <DropdownMenuTrigger asChild>
             <Button
               disabled={isLoading}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm"
+              className="bg.black hover:bg-gray-800 text-white px-4 py-2 text-sm dark:bg-white dark:hover:bg-gray-200 dark:text-black"
               size="sm"
             >
               {isLoading ? 'Processing...' : (
@@ -292,7 +292,7 @@ export const PaymentChannelSettings: React.FC = () => {
             <DropdownMenuItem
               onClick={() => handleChannelAction(channel.channelId, 'settle')}
               disabled={isLoading}
-              className="text-red-600 focus:text-red-600"
+              className="text-gray-800 dark:text-gray-200 focus:text-gray-800 dark:focus:text-gray-200"
             >
               Settle Channel
             </DropdownMenuItem>
@@ -304,7 +304,7 @@ export const PaymentChannelSettings: React.FC = () => {
         <Button
           onClick={() => handleWithdrawDeposit(channel)}
           disabled={isLoading}
-          className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 text-sm"
+          className="bg-black hover:bg-gray-800 text-white px-4 py-2 text-sm dark:bg-white dark:hover:bg-gray-200 dark:text-black"
           size="sm"
         >
           {isLoading ? 'Processing...' : 'Withdraw Deposit'}
@@ -345,12 +345,12 @@ export const PaymentChannelSettings: React.FC = () => {
           {channels.map((channel) => (
             <div key={channel.id} className={`rounded-lg border shadow-sm ${
               channel.isDefault 
-                ? 'border-blue-200 bg-blue-50/50 dark:border-blue-700/40 dark:bg-blue-900/20' 
+                ? 'border-gray-300 bg-gray-100/50 dark:border-gray-600/40 dark:bg-gray-800/20' 
                 : 'border-gray-100/30 bg-slate-50/50 dark:border-slate-700/40 dark:bg-slate-800'
             }`}>
               {/* Accordion Header */}
               <div 
-                className="p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors"
+                className="p-4 cursor-pointer hover:bg-transparent dark:hover:bg-transparent transition-colors"
                 onClick={() => toggleChannelExpansion(channel.channelId)}
               >
                 <div className="flex items-center justify-between">
@@ -375,7 +375,7 @@ export const PaymentChannelSettings: React.FC = () => {
                       {getStatusBadge(channel.status, channel.statusText)}
                     </div>
                     {channel.isDefault && (
-                      <div className="inline-flex rounded-full px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                      <div className="inline-flex rounded-full px-2 py-1 text-xs font-medium bg-gray-200 text-gray-800 dark:bg-gray-700/30 dark:text-gray-300">
                         Default
                       </div>
                     )}

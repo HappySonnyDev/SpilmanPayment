@@ -167,7 +167,12 @@ export const chunks = {
     return apiPost('/api/chunks/pay-enhanced', data);
   },
 
-
+  /**
+   * Get latest chunk
+   */
+  async latest(): Promise<unknown> {
+    return apiGet('/api/chunks/latest');
+  },
 
   /**
    * Get chunks
