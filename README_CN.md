@@ -316,7 +316,6 @@ pnpm cron-scheduler   # 运行定时任务调度器
 | 变量名 | 说明 | 必需 | 示例 |
 |--------|------|------|------|
 | `OPENAI_API_KEY` | OpenAI API 密钥 | 是 | `sk-xxx...` |
-| `OPENAI_BASE_URL` | OpenAI API 端点 | 否 | `https://api.openai.com/v1` |
 | `SELLER_PRIVATE_KEY` | 卖方私钥 | 是 | `0x...` |
 | `JWT_SECRET` | JWT 签名密钥 | 是 | `your-secret` |
 

@@ -144,16 +144,11 @@ dapp_2/
    OPENAI_BASE_URL=https://api.openai.com/v1  # Optional, custom API endpoint
    
    # CKB Blockchain Configuration
-   CKB_NODE_URL=http://localhost:28114  # CKB Devnet node address
    SELLER_PRIVATE_KEY=0xxxxxxxxxxxxx     # Seller (server-side) private key
-   SELLER_ADDRESS=ckt1xxxxxxxxxxxxxxxxx   # Seller address
    
    # JWT Secret (for authentication)
    JWT_SECRET=your-secret-key-here
    
-   # Application Configuration
-   NEXT_PUBLIC_API_URL=http://localhost:3000
-   ```
 
 5. **Initialize database**
    
@@ -330,12 +325,8 @@ pnpm cron-scheduler   # Run scheduled task scheduler
 | Variable | Description | Required | Example |
 |----------|-------------|----------|----------|
 | `OPENAI_API_KEY` | OpenAI API key | Yes | `sk-xxx...` |
-| `OPENAI_BASE_URL` | OpenAI API endpoint | No | `https://api.openai.com/v1` |
 | `SELLER_PRIVATE_KEY` | Seller private key | Yes | `0x...` |
-| `SELLER_ADDRESS` | Seller address | Yes | `ckt1...` |
 | `JWT_SECRET` | JWT signing secret | Yes | `your-secret` |
-| `NEXT_PUBLIC_API_URL` | API base URL | No | `http://localhost:3000` |
-| `CKB_NODE_URL` | CKB node address | No | `http://localhost:28114` |
 
 ## 🐛 Troubleshooting
 
