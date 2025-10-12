@@ -93,6 +93,12 @@ export const UsageSettings: React.FC = () => {
       
       alert('Channel set as default successfully!');
       await refetch(); // Refresh data
+      
+      // Emit event to notify Payment Status and Payment History
+      const defaultChannelChangedEvent = new CustomEvent('defaultChannelChanged', {
+        detail: { channelId }
+      });
+      window.dispatchEvent(defaultChannelChangedEvent);
     } catch (error) {
       console.error('Error setting default channel:', error);
       alert('Failed to set as default: ' + (error instanceof Error ? error.message : 'Unknown error'));

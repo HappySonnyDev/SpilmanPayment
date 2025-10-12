@@ -144,10 +144,15 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
             setPaymentRecords([initialRecord]);
             console.log('📝 Loaded latest chunk record:', latestChunk.chunkId, 'isPaid:', latestChunk.isPaid);
           } else {
-            console.log('📝 No latest chunk found');
+            // Reset payment records if no chunk found
+            setPaymentRecords([]);
+            console.log('📝 No latest chunk found - reset payment records');
           }
         } else {
-          console.log('📝 No default channel found');
+          // Reset both payment channel info and payment records if no default channel
+          setPaymentChannelInfo(null);
+          setPaymentRecords([]);
+          console.log('📝 No default channel found - reset payment data');
         }
       } catch (error) {
         console.error('Failed to fetch channel data or latest chunk:', error);
@@ -158,6 +163,21 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
     };
     
     fetchChannelData();
+    
+    // Listen for default channel changes
+    const handleDefaultChannelChanged = (event: CustomEvent) => {
+      const { channelId } = event.detail;
+      console.log('🔄 Default channel changed to:', channelId, '- refreshing payment data');
+      // Reset loading state and refetch
+      setIsDataLoading(true);
+      fetchChannelData();
+    };
+    
+    window.addEventListener('defaultChannelChanged', handleDefaultChannelChanged as EventListener);
+    
+    return () => {
+      window.removeEventListener('defaultChannelChanged', handleDefaultChannelChanged as EventListener);
+    };
   }, [user]);
 
 

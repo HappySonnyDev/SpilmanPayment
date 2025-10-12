@@ -139,6 +139,12 @@ export const PaymentChannelSettings: React.FC = () => {
 
       // Refresh the channels list
       await refetch();
+      
+      // Emit event to notify Payment Status and Payment History
+      const defaultChannelChangedEvent = new CustomEvent('defaultChannelChanged', {
+        detail: { channelId }
+      });
+      window.dispatchEvent(defaultChannelChangedEvent);
     } catch (error) {
       console.error("Error setting default channel:", error);
       alert(
