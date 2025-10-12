@@ -76,15 +76,6 @@ export async function POST(request: NextRequest) {
     }
 
     // Store the payment transaction data in chunk_payments table
-    console.log('💾 Storing payment transaction data:', {
-      chunkId,
-      channelId: paymentInfo.channelId,
-      cumulativePayment: paymentInfo.cumulativePayment,
-      remainingBalance: paymentInfo.remainingBalance,
-      transactionHash: transactionData.transaction.hash || 'N/A'
-    });
-
-    // Update chunk payment with transaction data and mark as paid
     const updatedChunk = chunkRepo.updateChunkPaymentWithTransactionData(
       chunkId,
       paymentInfo.channelId,
@@ -102,11 +93,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Emit chunkPaymentSuccess event for real-time UI updates
-    // This ensures the frontend updates payment records immediately
-    console.log('🚀 Emitting chunkPaymentSuccess event for chunk:', chunkId);
-
-    // Note: consumed_tokens is updated during chat streaming, not during payment
-    // Payment status is tracked separately from consumption
+    // consumed_tokens is updated during chat streaming, not during payment
 
     return NextResponse.json({
       success: true,

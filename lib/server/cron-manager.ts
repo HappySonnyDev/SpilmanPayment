@@ -50,15 +50,11 @@ class CronManager {
 
   private async autoSettleTask(): Promise<void> {
     try {
-      console.log('[CRON-MANAGER] 🕐 Running auto-settlement task...');
-      
-      // Determine the correct API URL (use environment variable or default)
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 
                     process.env.NODE_ENV === 'production' 
                       ? 'https://your-domain.com' 
                       : 'http://localhost:3000';
       
-      // Try different ports if the default fails
       const portsToTry = [3000, 3001, 3002];
       let lastError: Error | null = null;
       
@@ -67,8 +63,6 @@ class CronManager {
           const url = apiUrl.includes('localhost') 
             ? `http://localhost:${port}/api/admin/auto-settle-expiring`
             : `${apiUrl}/api/admin/auto-settle-expiring`;
-            
-          console.log(`[CRON-MANAGER] Trying API URL: ${url}`);
           
           const response = await fetch(url, {
             method: 'POST',
@@ -79,41 +73,31 @@ class CronManager {
 
           if (response.ok) {
             const result = await response.json();
-            console.log('[CRON-MANAGER] ✅ Auto-settlement completed:', {
-              settledCount: result.settledCount,
-              checkedCount: result.checkedCount
-            });
-            return; // Success, exit the function
+            console.log('[CRON] Auto-settlement completed:', result.settledCount, '/', result.checkedCount);
+            return;
           } else {
-            console.log(`[CRON-MANAGER] API responded with status ${response.status} for port ${port}`);
             lastError = new Error(`HTTP ${response.status}`);
           }
         } catch (error) {
-          console.log(`[CRON-MANAGER] Failed to connect to port ${port}:`, error instanceof Error ? error.message : error);
           lastError = error instanceof Error ? error : new Error(String(error));
         }
       }
       
-      // If we get here, all ports failed
       throw lastError || new Error('All API endpoints failed');
       
     } catch (error) {
-      console.error('[CRON-MANAGER] ❌ Auto-settlement task error:', error);
-      throw error; // Re-throw to ensure proper error handling
+      console.error('[CRON] Auto-settlement error:', error);
+      throw error;
     }
   }
 
   private async checkExpiredChannelsTask(): Promise<void> {
     try {
-      console.log('[CRON-MANAGER] 🕐 Running check expired channels task...');
-      
-      // Determine the correct API URL (use environment variable or default)
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 
                     process.env.NODE_ENV === 'production' 
                       ? 'https://your-domain.com' 
                       : 'http://localhost:3000';
       
-      // Try different ports if the default fails
       const portsToTry = [3000, 3001, 3002];
       let lastError: Error | null = null;
       
@@ -122,8 +106,6 @@ class CronManager {
           const url = apiUrl.includes('localhost') 
             ? `http://localhost:${port}/api/admin/check-expired-channels`
             : `${apiUrl}/api/admin/check-expired-channels`;
-            
-          console.log(`[CRON-MANAGER] Trying API URL: ${url}`);
           
           const response = await fetch(url, {
             method: 'POST',
@@ -134,27 +116,21 @@ class CronManager {
 
           if (response.ok) {
             const result = await response.json();
-            console.log('[CRON-MANAGER] ✅ Check expired channels completed:', {
-              expiredCount: result.data?.expired_count || 0,
-              checkedCount: result.data?.checked_count || 0
-            });
-            return; // Success, exit the function
+            console.log('[CRON] Check expired channels:', result.data?.expired_count || 0, '/', result.data?.checked_count || 0);
+            return;
           } else {
-            console.log(`[CRON-MANAGER] API responded with status ${response.status} for port ${port}`);
             lastError = new Error(`HTTP ${response.status}`);
           }
         } catch (error) {
-          console.log(`[CRON-MANAGER] Failed to connect to port ${port}:`, error instanceof Error ? error.message : error);
           lastError = error instanceof Error ? error : new Error(String(error));
         }
       }
       
-      // If we get here, all ports failed
       throw lastError || new Error('All API endpoints failed');
       
     } catch (error) {
-      console.error('[CRON-MANAGER] ❌ Check expired channels task error:', error);
-      throw error; // Re-throw to ensure proper error handling
+      console.error('[CRON] Check expired channels error:', error);
+      throw error;
     }
   }
 
@@ -184,7 +160,6 @@ class CronManager {
       this.tasks.set(taskName, task);
       await task.start();
 
-      console.log(`[CRON-MANAGER] 🚀 Started task: ${taskName}`);
       return { success: true, message: `Task ${taskName} started successfully` };
 
     } catch (error) {
@@ -205,7 +180,6 @@ class CronManager {
       }
 
       await task.stop();
-      console.log(`[CRON-MANAGER] 🛑 Stopped task: ${taskName}`);
       return { success: true, message: `Task ${taskName} stopped successfully` };
 
     } catch (error) {
@@ -277,11 +251,8 @@ class CronManager {
         return { success: false, message: `Task ${taskName} not found` };
       }
 
-      // Execute the task function directly, regardless of scheduling status
-      console.log(`[CRON-MANAGER] 🔧 Manually executing task: ${taskName}`);
       await config.taskFunction();
       
-      console.log(`[CRON-MANAGER] ✅ Manually executed task: ${taskName}`);
       return { success: true, message: `Task ${taskName} executed successfully` };
 
     } catch (error) {
@@ -295,19 +266,15 @@ class CronManager {
   }
 
   async stopAllTasks(): Promise<void> {
-    console.log('[CRON-MANAGER] 🛑 Stopping all tasks...');
-    
     for (const [taskName, task] of this.tasks) {
       try {
         await task.stop();
-        console.log(`[CRON-MANAGER] ⏹️ Stopped task: ${taskName}`);
       } catch (error) {
-        console.error(`[CRON-MANAGER] ❌ Failed to stop task ${taskName}:`, error);
+        console.error(`[CRON] Failed to stop task ${taskName}:`, error);
       }
     }
     
     this.tasks.clear();
-    console.log('[CRON-MANAGER] ✅ All tasks stopped');
   }
 
   getAvailableTaskNames(): string[] {
@@ -320,11 +287,9 @@ export const cronManager = new CronManager();
 
 // Graceful shutdown handlers
 process.on('SIGTERM', async () => {
-  console.log('[CRON-MANAGER] Received SIGTERM, stopping all tasks...');
   await cronManager.stopAllTasks();
 });
 
 process.on('SIGINT', async () => {
-  console.log('[CRON-MANAGER] Received SIGINT, stopping all tasks...');
   await cronManager.stopAllTasks();
 });

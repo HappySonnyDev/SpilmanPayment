@@ -132,7 +132,6 @@ export default function ScheduledTasksPage() {
       // Load task status
       const tasksResponse = await fetch("/api/admin/tasks");
       if (!tasksResponse.ok) {
-        console.error("Failed to load task status");
         return;
       }
 
@@ -168,7 +167,7 @@ export default function ScheduledTasksPage() {
               };
             }
           } catch (error) {
-            console.warn(`Failed to load logs for task ${task.name}:`, error);
+            // Silently handle log fetch errors
           }
 
           return task;
@@ -201,7 +200,6 @@ export default function ScheduledTasksPage() {
 
       if (response.ok) {
         const result = await response.json();
-        console.log("Task status updated:", result);
 
         // Reload task status
         await loadTaskStatus();
@@ -223,9 +221,6 @@ export default function ScheduledTasksPage() {
     setIsLoading(true);
 
     try {
-      console.log(`Running task manually: ${taskName}`);
-
-      // Use the task manager API to execute the task
       const response = await fetch("/api/admin/tasks", {
         method: "POST",
         headers: {
@@ -239,7 +234,6 @@ export default function ScheduledTasksPage() {
 
       if (response.ok) {
         const result = await response.json();
-        console.log("Task execution result:", result);
 
         // Reload task status
         await loadTaskStatus();

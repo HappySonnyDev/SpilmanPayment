@@ -51,7 +51,6 @@ export function useChunkPayment() {
       
       console.log('🎗️ Constructing payment transaction for chunk:', chunkId);
       
-      // Construct payment transaction and signatures
       const transactionResult = await constructPaymentTransaction(
         chunkId,
         paymentInfo.cumulativePayment,
@@ -66,7 +65,6 @@ export function useChunkPayment() {
       
       console.log('💾 Sending enhanced payment request...');
       
-      // Send enhanced payment request with transaction data
       const response = await fetch('/api/chunks/pay-enhanced', {
         method: 'POST',
         headers: {
@@ -116,7 +114,6 @@ export function useChunkPayment() {
     try {
       console.log(`💰 Making enhanced payment request for chunk: ${chunkId}`);
       
-      // Use the enhanced payment method with payment info
       const result = await enhancedPayForChunk(chunkId, paymentInfo);
       setPaymentHistory(prev => [...prev, result]);
       return result;

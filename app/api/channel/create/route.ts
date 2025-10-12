@@ -64,9 +64,8 @@ export async function POST(request: NextRequest) {
     refundCCC.witnesses.push(createPlaceholderWitness());
 
 
-    // New approach: Deduct fee from buyer's refund amount instead of seller paying
-    // This simplifies transaction structure and avoids P2PH signing complexity
-    const estimatedFee = BigInt(1400); // 1400 shannons for transaction fee
+    // New approach: Deduct fee from buyer's refund amount
+    const estimatedFee = BigInt(1400);
 
     // Calculate net refund amount (original amount minus fee)
     const originalRefundAmount = refundCCC.outputs[0].capacity;
@@ -74,12 +73,9 @@ export async function POST(request: NextRequest) {
 
     // Update buyer's refund output with fee deducted
     refundCCC.outputs[0] = ccc.CellOutput.from({
-      lock: refundCCC.outputs[0].lock, // Keep buyer's address
-      capacity: netRefundAmount, // Reduce by fee amount
+      lock: refundCCC.outputs[0].lock,
+      capacity: netRefundAmount,
     });
-
-    console.log(`Net refund amount after fee deduction: ${netRefundAmount}`);
-    console.log(`Fee will be absorbed by network: ${estimatedFee}`);
 
     // Generate message hash from completed refund transaction
     const refundTxHash = refundCCC.hash();

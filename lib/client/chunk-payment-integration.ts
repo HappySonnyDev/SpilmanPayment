@@ -13,11 +13,7 @@ export interface ChunkPaymentHandler {
 }
 
 /**
- * This function would be called when you receive streaming chunks from the AI response.
- * In a real implementation, you'd integrate this with your streaming response parser.
- * 
- * @param streamingResponse - The streaming response from the AI
- * @param paymentHandler - Handler for chunk payment events
+ * Process streaming response with payment
  */
 export async function processStreamingResponseWithPayment(
   streamingResponse: ReadableStream,
@@ -36,14 +32,11 @@ export async function processStreamingResponseWithPayment(
       const chunk = decoder.decode(value, { stream: true });
       fullResponse += chunk;
       
-      // In a real implementation, you'd extract chunk_id from the response metadata
-      // For now, we'll simulate this
       const chunkInfo: ChunkInfo = {
         chunkId: `chunk_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        tokens: Math.ceil(chunk.length / 4), // Approximate token count
+        tokens: Math.ceil(chunk.length / 4),
       };
       
-      // Handle chunk payment
       await paymentHandler.onChunkReceived(chunkInfo);
     }
   } finally {
@@ -67,15 +60,11 @@ export class ChunkPaymentService {
 
   async payForChunk(chunkId: string): Promise<void> {
     try {
-      // Note: Enhanced payment is now handled directly in the chunk-aware-composer
-      // This method is kept for compatibility but should use the enhanced payment flow
       throw new Error('Direct chunk payment not supported. Use enhanced payment flow in chunk-aware-composer.');
-      
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       this.paymentHistory.push({ chunkId, success: false, error: errorMessage });
-      
-      console.error(`❌ Failed to pay for chunk ${chunkId}:`, error);
+      console.error(`Failed to pay for chunk ${chunkId}:`, error);
       throw error;
     }
   }
@@ -87,7 +76,7 @@ export class ChunkPaymentService {
       try {
         await this.payForChunk(chunkInfo.chunkId);
       } catch (error) {
-        // Error already logged in payForChunk
+        // Error already logged
       }
     }
   }
@@ -107,6 +96,4 @@ export class ChunkPaymentService {
   isAutoPayEnabled(): boolean {
     return this.autoPayEnabled;
   }
-
-  // Note: Removed payAllPending method as we now use direct chunk-level payment
 }

@@ -64,87 +64,60 @@ export function usePaymentTransaction() {
           buyerPrivateKey,
         );
 
-        // console.log(await buyerSigner.signMessageRaw('00'),'messagfe')
-        console.log(buyerSigner.privateKey, "222");
-        // 获取买家地址
         const buyerAddress = await buyerSigner.getRecommendedAddressObj();
-        console.log(buyerAddress, "buyerAddress");
         const sellerAddress = await ccc.Address.fromString(
           user.seller_address,
           client,
         );
 
         // Create multisig script to get the correct cellDeps
-        // 使用买方私钥和服务端公钥（卖方公钥）
-        console.log(user.serverPublicKey,'serverPublicKey')
         const { cellDeps } = createMultisigScript(
           derivePublicKeyHashByPrivateKey(buyerPrivateKey),
-          derivePublicKeyHashByPublicKey(user.serverPublicKey), // 使用服务端公钥
+          derivePublicKeyHashByPublicKey(user.serverPublicKey),
         );
 
-        // 构造支付交易
+        // Construct payment transaction
         const paymentTx = ccc.Transaction.from({
           inputs: [
             {
               previousOutput: {
-                txHash: channelTxHash, // 从payment channel的txHash字段获取
+                txHash: channelTxHash,
                 index: 0,
               },
             },
           ],
           outputs: [
             {
-              // 给卖家的支付
               lock: sellerAddress.script,
               capacity: ccc.fixedPointFrom(cumulativePayment),
             },
             {
-              // 给买家的剩余金额
               lock: buyerAddress.script,
               capacity: ccc.fixedPointFrom(remainingBalance),
             },
           ],
-          cellDeps, // Use cellDeps from multisig script
+          cellDeps,
         });
 
-        console.log("🏗️ Constructed payment transaction:", {
-          seller: user.seller_address,
-          sellerAmount: cumulativePayment,
-          buyer: await buyerSigner.getRecommendedAddress(),
-          buyerAmount: remainingBalance,
-          channelTxHash,
-        });
-
-        // 买家签名前先push正确长度的占位符 (132 bytes for multisig)
-        // 创建132字节的占位符: 65字节买方签名 + 65字节卖方签名 + 2字节索引
+        // Create placeholder witness for multisig (132 bytes)
         paymentTx.witnesses.push(createPlaceholderWitness());
 
-        const fee = 1400; // 固定手续费
-        console.log(jsonStr(paymentTx), "paymentTxbefore=======");
-        // 完成交易费用 (这会自动处理手续费签名)
+        const fee = 1400;
         await paymentTx.completeFeeBy(buyerSigner, fee);
         await buyerSigner.signTransaction(paymentTx);
-        // console.log(feeWitnesses,'feeWitnesses======')
-        console.log(JSON.parse(jsonStr(paymentTx)), "paymentTx==============",paymentTx.hash());
-        // 获取交易消息哈希
+        // Get transaction message hash
         const messageHash = getMessageHashFromTx(paymentTx.hash());
 
-        // 生成买家签名
+        // Generate buyer signature
         const buyerSignature = generateCkbSecp256k1Signature(
           buyerPrivateKey,
           messageHash,
         );
 
         const transactionData: PaymentTransactionData = {
-          transaction: JSON.parse(jsonStr(paymentTx)), // Convert transaction to JSON
+          transaction: JSON.parse(jsonStr(paymentTx)),
           buyerSignature: Buffer.from(buyerSignature).toString("hex"),
         };
-
-        console.log("✅ Payment transaction constructed successfully:", {
-          chunkId,
-          transactionHash: paymentTx.hash(),
-          buyerSignature: "generated",
-        });
 
         return {
           success: true,
