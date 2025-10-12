@@ -13,6 +13,8 @@ import {
 import { usePaymentChannels, PaymentChannel } from "@/hooks/use-payment-channels";
 import { useChunkPayment } from "@/hooks/use-chunk-payment";
 import { channel } from "@/lib/api";
+import { formatDbTimeToLocal, calculateDaysRemaining, isChannelExpired } from "@/lib/date-utils";
+import { DataDisplay } from "@/components/bussiness/data-display";
 
 interface LatestChunk {
   chunkId: string;
@@ -155,53 +157,38 @@ export const UsageSettings: React.FC = () => {
     const remainingTokens = totalTokens - consumedTokens;
     const usagePercentage = (consumedTokens / totalTokens) * 100;
     
-    // Calculate days remaining - use verifiedAt for active channels, createdAt for inactive
-    const startDate = new Date(channel.verifiedAt && channel.verifiedAt !== null ? channel.verifiedAt : channel.createdAt);
-    // Use duration in seconds if available, otherwise convert days to seconds
-    const durationInSeconds = channel.durationSeconds || (channel.durationDays * 24 * 60 * 60);
-    const endDate = new Date(startDate.getTime() + (durationInSeconds * 1000));
-    const now = new Date();
-    
-    // Calculate remaining time in different units
-    const remainingMs = Math.max(0, endDate.getTime() - now.getTime());
-    const remainingSeconds = Math.floor(remainingMs / 1000);
-    const remainingDays = Math.floor(remainingSeconds / (24 * 60 * 60));
-    const remainingHours = Math.floor((remainingSeconds % (24 * 60 * 60)) / 3600);
-    const remainingMinutes = Math.floor((remainingSeconds % 3600) / 60);
+    // Calculate days remaining using the utility function
+    const daysRemaining = calculateDaysRemaining(channel.verifiedAt || null, channel.durationDays);
     
     // Format remaining time display
     let timeRemainingDisplay;
-    if (remainingDays > 0) {
-      timeRemainingDisplay = `${remainingDays} day${remainingDays > 1 ? 's' : ''}`;
-    } else if (remainingHours > 0) {
-      timeRemainingDisplay = `${remainingHours} hour${remainingHours > 1 ? 's' : ''}`;
-    } else if (remainingMinutes > 0) {
-      timeRemainingDisplay = `${remainingMinutes} minute${remainingMinutes > 1 ? 's' : ''}`;
-    } else if (remainingSeconds > 0) {
-      timeRemainingDisplay = `${remainingSeconds} second${remainingSeconds > 1 ? 's' : ''}`;
+    if (daysRemaining > 0) {
+      timeRemainingDisplay = `${daysRemaining} day${daysRemaining > 1 ? 's' : ''}`;
+    } else if (daysRemaining === 0) {
+      timeRemainingDisplay = 'Less than 1 day';
     } else {
       timeRemainingDisplay = 'Expired';
     }
+    
+    // Calculate end date for display
+    const startDate = new Date(channel.verifiedAt && channel.verifiedAt !== null ? channel.verifiedAt : channel.createdAt);
+    const durationInSeconds = channel.durationSeconds || (channel.durationDays * 24 * 60 * 60);
+    const endDate = new Date(startDate.getTime() + (durationInSeconds * 1000));
     
     return {
       totalTokens,
       consumedTokens,
       remainingTokens,
       usagePercentage,
-      daysRemaining: remainingDays,
+      daysRemaining,
       timeRemainingDisplay,
       endDate,
-      isExpired: remainingMs <= 0
+      isExpired: isChannelExpired(channel.verifiedAt || null, channel.durationDays)
     };
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      timeZone: 'Asia/Shanghai'
-    });
+    return formatDbTimeToLocal(dateString, 'MMM DD, YYYY');
   };
 
   if (isLoading) {
@@ -376,96 +363,63 @@ export const UsageSettings: React.FC = () => {
                 {/* Basic Information Grid */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                      Chunk ID
-                    </label>
-                    <p className="text-sm font-mono bg-slate-100 dark:bg-slate-700 p-2 rounded">
-                      {latestChunk.chunkId}
-                    </p>
+                    <DataDisplay
+                      title="Chunk ID"
+                      data={latestChunk.chunkId}
+                      className="mb-0"
+                    />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                      Tokens Consumed
-                    </label>
-                    <p className="text-sm bg-slate-100 dark:bg-slate-700 p-2 rounded">
-                      {latestChunk.tokens} tokens
-                    </p>
+                    <DataDisplay
+                      title="Tokens Consumed"
+                      data={`${latestChunk.tokens} tokens`}
+                      className="mb-0"
+                    />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                      Payment Status
-                    </label>
-                    <p className="text-sm bg-slate-100 dark:bg-slate-700 p-2 rounded">
-                      {latestChunk.isPaid ? (
-                        <span className="inline-flex items-center text-green-600">
-                          <Check className="h-4 w-4 mr-1" />
-                          Paid
-                        </span>
-                      ) : (
-                        <span className="text-orange-600">Unpaid</span>
-                      )}
-                    </p>
+                    <DataDisplay
+                      title="Payment Status"
+                      data={latestChunk.isPaid ? "✓ Paid" : "Unpaid"}
+                      className="mb-0"
+                    />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                      Timestamp
-                    </label>
-                    <p className="text-sm bg-slate-100 dark:bg-slate-700 p-2 rounded">
-                      {new Date(latestChunk.timestamp).toLocaleString('en-US', {
-                        year: 'numeric',
-                        month: '2-digit',
-                        day: '2-digit',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        second: '2-digit',
-                        timeZoneName: 'short'
-                      })}
-                    </p>
+                    <DataDisplay
+                      title="Timestamp"
+                      data={formatDbTimeToLocal(latestChunk.timestamp, 'YYYY-MM-DD HH:mm:ss')}
+                      className="mb-0"
+                    />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                      Consumed Tokens
-                    </label>
-                    <p className="text-sm bg-slate-100 dark:bg-slate-700 p-2 rounded">
-                      {latestChunk.consumedTokens.toLocaleString()} Tokens
-                    </p>
+                    <DataDisplay
+                      title="Consumed Tokens"
+                      data={`${latestChunk.consumedTokens.toLocaleString()} Tokens`}
+                      className="mb-0"
+                    />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                      Remaining Tokens
-                    </label>
-                    <p className="text-sm bg-slate-100 dark:bg-slate-700 p-2 rounded">
-                      {latestChunk.remainingTokens.toLocaleString()} Tokens
-                    </p>
+                    <DataDisplay
+                      title="Remaining Tokens"
+                      data={`${latestChunk.remainingTokens.toLocaleString()} Tokens`}
+                      className="mb-0"
+                    />
                   </div>
                 </div>
                 
                 {/* Buyer Signature - Only show if available */}
                 {latestChunk.buyerSignature && (
-                  <div className="w-full min-w-0">
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                      Buyer Signature
-                    </label>
-                    <div className="w-full overflow-hidden">
-                      <p className="text-xs font-mono bg-slate-100 dark:bg-slate-700 p-3 rounded whitespace-pre-wrap break-all word-break-break-all overflow-wrap-anywhere max-w-full">
-                        {latestChunk.buyerSignature}
-                      </p>
-                    </div>
-                  </div>
+                  <DataDisplay
+                    title="Buyer Signature"
+                    data={latestChunk.buyerSignature}
+                  />
                 )}
                 
                 {/* Transaction Data - Only show if paid and has transaction data */}
                 {latestChunk.isPaid && latestChunk.transactionData && (
-                  <div className="w-full min-w-0">
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                      Transaction Data
-                    </label>
-                    <div className="w-full overflow-hidden">
-                      <pre className="text-xs bg-slate-100 dark:bg-slate-700 p-3 rounded whitespace-pre-wrap break-all word-break-break-all overflow-wrap-anywhere max-w-full">
-                        {JSON.stringify(latestChunk.transactionData, null, 2)}
-                      </pre>
-                    </div>
-                  </div>
+                  <DataDisplay
+                    title="Transaction Data"
+                    data={latestChunk.transactionData}
+                  />
                 )}
                 
                 {/* Pay Button - Only show if unpaid */}

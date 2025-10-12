@@ -54,24 +54,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get all chunk payments for this channel to find the latest one
-    const { getDatabase } = await import("@/lib/database");
-    const db = getDatabase();
-    const chunkPayments = db
-      .prepare(
-        "SELECT * FROM chunk_payments WHERE channel_id = ? ORDER BY created_at DESC",
-      )
-      .all(channelId) as ChunkPayment[];
+    // Get the latest chunk payment for this channel using the same logic as getLatestChunkForUserChannel
+    const chunkPaymentRepo = new ChunkPaymentRepository();
+    const latestChunk = chunkPaymentRepo.getLatestChunkForUserChannel(userId, channelId);
 
-    if (chunkPayments.length === 0) {
+    if (!latestChunk) {
       return NextResponse.json(
         { error: "No payments found for this channel" },
         { status: 400 },
       );
     }
-
-    // Find the latest chunk payment
-    const latestChunk = chunkPayments[0];
 
     // Check if the latest chunk is paid
     if (!latestChunk.is_paid) {
@@ -158,6 +150,12 @@ export async function POST(request: NextRequest) {
       const client = buildClient("devnet");
       console.log(jsonStr(transaction),'transaction==========')
       const txHash = await client.sendTransaction(transaction);
+
+      // Store the transaction data in settle_tx_data field
+      paymentChannelRepo.updatePaymentChannelSettleTxData(
+        channelId,
+        jsonStr(transaction)
+      );
 
       // Update channel status to SETTLED
       const updatedChannel = paymentChannelRepo.updatePaymentChannelStatus(

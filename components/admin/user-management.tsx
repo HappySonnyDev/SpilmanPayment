@@ -4,7 +4,14 @@ import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Search, Eye, Edit, Trash2 } from "lucide-react";
+import { formatDbTimeToLocal } from "@/lib/date-utils";
 
 interface User {
   id: number;
@@ -50,16 +57,7 @@ export const UserManagement: React.FC = () => {
   );
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('en-US', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-      timeZone: 'Asia/Shanghai'
-    });
+    return formatDbTimeToLocal(dateString, 'MM/DD/YYYY HH:mm:ss');
   };
 
   const handleViewUser = (user: User) => {
@@ -96,7 +94,8 @@ export const UserManagement: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <TooltipProvider>
+      <div className="space-y-6">
       {/* Search */}
       <div className="flex items-center space-x-4">
         <div className="relative flex-1 max-w-md">
@@ -171,9 +170,16 @@ export const UserManagement: React.FC = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono">
                     {user.public_key ? (
-                      <span title={user.public_key}>
-                        {user.public_key.slice(0, 16)}...
-                      </span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
+                            {user.public_key.slice(0, 16)}...
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-md break-all">
+                          <p className="font-mono text-xs">{user.public_key}</p>
+                        </TooltipContent>
+                      </Tooltip>
                     ) : 'N/A'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
@@ -184,14 +190,16 @@ export const UserManagement: React.FC = () => {
                     >
                       <Eye className="h-4 w-4" />
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => toggleUserStatus(user.id, user.is_active)}
-                      className={user.is_active ? "text-red-600 hover:text-red-700" : "text-green-600 hover:text-green-700"}
-                    >
-                      {user.is_active ? 'Deactivate' : 'Activate'}
-                    </Button>
+                    {!user.is_active && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => toggleUserStatus(user.id, user.is_active)}
+                        className="text-green-600 hover:text-green-700"
+                      >
+                        Activate
+                      </Button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -268,6 +276,7 @@ export const UserManagement: React.FC = () => {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </TooltipProvider>
   );
 };

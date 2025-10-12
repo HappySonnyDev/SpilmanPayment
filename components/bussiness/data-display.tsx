@@ -5,12 +5,14 @@ import { jsonStr } from "@/lib/ckb";
 
 interface DataDisplayProps {
   title: string;
+  subtitle?: string; // Optional subtitle for additional context
   data: unknown;
   className?: string;
 }
 
 export const DataDisplay: React.FC<DataDisplayProps> = ({
   title,
+  subtitle,
   data,
   className = "",
 }) => {
@@ -49,11 +51,18 @@ export const DataDisplay: React.FC<DataDisplayProps> = ({
   };
 
   return (
-    <div className={`mb-8 ${className}`}>
-      <div className="flex items-center justify-between mb-4">
-        <h4 className="text-base font-semibold text-slate-700 dark:text-slate-300">
-          {title}
-        </h4>
+    <div className={`mb-2 ${className}`}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex-1">
+          <h4 className="text-base font-semibold text-slate-700 dark:text-slate-300">
+            {title}
+          </h4>
+          {subtitle && (
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+              {subtitle}
+            </p>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <Button
             variant="ghost"

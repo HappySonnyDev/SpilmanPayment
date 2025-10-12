@@ -47,6 +47,7 @@ async function listChannelsHandler(request: NextRequest) {
     sellerSignature: channel.seller_signature,
     refundTxData: channel.refund_tx_data,
     fundingTxData: channel.funding_tx_data,
+    settleTxData: channel.settle_tx_data, // Include settlement transaction data
   }));
 
   return ApiResponse.success({

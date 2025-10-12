@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
+import { formatDbTimeToLocal } from "@/lib/date-utils";
 
 // Simple Card components
 interface CardProps {
@@ -320,15 +321,7 @@ export default function ScheduledTasksPage() {
 
   const formatTime = (isoString?: string) => {
     if (!isoString) return "Never";
-    return new Date(isoString).toLocaleString("en-US", {
-      timeZone: "Asia/Shanghai",
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
+    return formatDbTimeToLocal(isoString, 'MMM DD, YYYY HH:mm:ss');
   };
 
   const getDisplayLastRun = (task: TaskStatus) => {

@@ -4,6 +4,7 @@ import 'server-only';
 import Database from 'better-sqlite3';
 import { join } from 'path';
 import bcrypt from 'bcryptjs';
+import { jsonStr } from './ckb';
 
 // Database file path
 const dbPath = join(process.cwd(), 'database.sqlite');
@@ -21,7 +22,7 @@ export function getDatabase() {
 }
 
 // Database version for migrations
-const DATABASE_VERSION = 14; // Update to version 14 for verified_at column
+const DATABASE_VERSION = 15;
 
 // Initialize database tables
 function initializeDatabase() {
@@ -147,6 +148,10 @@ function runMigrations() {
   if (currentVersion < 14) {
     migrateToVersion14();
   }
+  if (currentVersion < 15) {
+    migrateToVersion15();
+  }
+
 
   // Update database version
   const updateVersionStmt = db.prepare('INSERT OR REPLACE INTO database_info (key, value) VALUES (?, ?)');
@@ -656,6 +661,39 @@ function migrateToVersion14() {
   }
 }
 
+// Migration to version 15: Add settle_tx_data column to payment_channels
+function migrateToVersion15() {
+  console.log('Running migration to version 15: adding settle_tx_data column to payment_channels');
+  
+  try {
+    // Check if settle_tx_data column already exists
+    const pragmaStmt = db.prepare('PRAGMA table_info(payment_channels)');
+    const columns = pragmaStmt.all() as Array<{ name: string }>;
+    const hasSettleTxDataColumn = columns.some(col => col.name === 'settle_tx_data');
+    
+    if (!hasSettleTxDataColumn) {
+      // Begin transaction
+      db.exec('BEGIN TRANSACTION');
+      
+      // Add settle_tx_data column
+      db.exec('ALTER TABLE payment_channels ADD COLUMN settle_tx_data TEXT');
+      
+      // Commit transaction
+      db.exec('COMMIT');
+      
+      console.log('Successfully added settle_tx_data column');
+    } else {
+      console.log('Settle_tx_data column already exists, skipping migration');
+    }
+  } catch (error) {
+    console.error('Error during migration to version 15:', error);
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+
+
 // User interface
 export interface User {
   id: number;
@@ -822,8 +860,8 @@ export class SessionRepository {
 
   createSession(userId: number, sessionId: string, expiresAt: Date): Session {
     const stmt = this.db.prepare(`
-      INSERT INTO sessions (id, user_id, expires_at)
-      VALUES (?, ?, ?)
+      INSERT INTO sessions (id, user_id, expires_at, created_at)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
     `);
 
     stmt.run(sessionId, userId, expiresAt.toISOString());
@@ -841,8 +879,8 @@ export class SessionRepository {
   }
 
   deleteExpiredSessions(): void {
-    const stmt = this.db.prepare('DELETE FROM sessions WHERE expires_at < ?');
-    stmt.run(new Date().toISOString());
+    const stmt = this.db.prepare('DELETE FROM sessions WHERE expires_at < datetime("now")');
+    stmt.run();
   }
 
   deleteUserSessions(userId: number): void {
@@ -876,6 +914,7 @@ export interface PaymentChannel {
   funding_tx_data: string | null;
   tx_hash: string | null; // Transaction hash after confirmation
   settle_hash: string | null; // Settlement transaction hash
+  settle_tx_data: string | null; // Settlement transaction data
   verified_at: string | null; // When channel becomes active (funding confirmed)
   is_default: number; // SQLite stores boolean as integer (0 or 1)
   consumed_tokens: number; // Number of tokens consumed
@@ -1036,6 +1075,17 @@ export class PaymentChannelRepository {
     return this.getPaymentChannelByChannelId(channelId);
   }
 
+  updatePaymentChannelSettleTxData(channelId: string, settleTxData: string): PaymentChannel | null {
+    const stmt = this.db.prepare(`
+      UPDATE payment_channels 
+      SET settle_tx_data = ?, updated_at = CURRENT_TIMESTAMP 
+      WHERE channel_id = ?
+    `);
+    
+    stmt.run(settleTxData, channelId);
+    return this.getPaymentChannelByChannelId(channelId);
+  }
+
   updatePaymentChannelStatus(channelId: string, status: PaymentChannelStatus): PaymentChannel | null {
     const stmt = this.db.prepare(`
       UPDATE payment_channels 
@@ -1138,7 +1188,7 @@ export class PaymentChannelRepository {
       AND verified_at IS NOT NULL
       AND (
         (duration_seconds IS NOT NULL AND datetime(verified_at, '+' || duration_seconds || ' seconds') < datetime('now'))
-        OR (duration_seconds IS NULL AND datetime(verified_at, '+' || duration_days || ' days') < datetime('now'))
+        OR (duration_seconds IS NULL AND datetime(verified_at, '+' || (duration_days * 24 * 60 * 60) || ' seconds') < datetime('now'))
       )
       ORDER BY verified_at ASC
     `);
@@ -1307,9 +1357,9 @@ export class ChunkPaymentRepository {
   }
 
   deleteOldUnpaidChunks(olderThanHours: number = 24): number {
-    const cutoffTime = new Date(Date.now() - (olderThanHours * 60 * 60 * 1000)).toISOString();
+    const cutoffDate = new Date(Date.now() - olderThanHours * 60 * 60 * 1000).toISOString();
     const stmt = this.db.prepare('DELETE FROM chunk_payments WHERE is_paid = 0 AND created_at < ?');
-    const result = stmt.run(cutoffTime);
+    const result = stmt.run(cutoffDate);
     return result.changes;
   }
 

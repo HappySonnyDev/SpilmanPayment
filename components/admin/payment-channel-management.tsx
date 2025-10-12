@@ -11,6 +11,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Search, Eye, Edit, Trash2, RefreshCw, Gavel, Loader2, Info } from "lucide-react";
+import { formatDbTimeToLocal } from "@/lib/date-utils";
+import dayjs from 'dayjs';
 
 interface PaymentChannel {
   id: number;
@@ -67,16 +69,7 @@ export const PaymentChannelManagement: React.FC = () => {
   );
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('en-US', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-      timeZone: 'Asia/Shanghai'
-    });
+    return formatDbTimeToLocal(dateString, 'MM/DD/YYYY HH:mm:ss');
   };
 
   const getStatusBadge = (status: number, statusText: string) => {
@@ -205,25 +198,25 @@ export const PaymentChannelManagement: React.FC = () => {
 
   const getPeriodRange = (createdAt: string, verifiedAt: string | undefined, durationDays: number, durationSeconds?: number) => {
     // Use verifiedAt for active channels, createdAt for inactive channels
-    const startDate = new Date(verifiedAt && verifiedAt !== null ? verifiedAt : createdAt);
+    const startDateStr = verifiedAt && verifiedAt !== null ? verifiedAt : createdAt;
     // Use duration in seconds if available, otherwise convert days to seconds
     const durationInSeconds = durationSeconds || (durationDays * 24 * 60 * 60);
-    const endDate = new Date(startDate.getTime() + (durationInSeconds * 1000));
     
-    const formatDateTime = (date: Date) => {
-      return date.toLocaleString('en-US', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
-        timeZone: 'Asia/Shanghai'
-      });
-    };
-    
-    return `${formatDateTime(startDate)} - ${formatDateTime(endDate)}`;
+    try {
+      // Parse UTC time using dayjs and calculate end time
+      const startUtc = dayjs.utc(startDateStr);
+      const endUtc = startUtc.add(durationInSeconds, 'seconds');
+      
+      // Format both dates using the utility function
+      const startFormatted = formatDbTimeToLocal(startDateStr, 'MM/DD/YYYY HH:mm:ss');
+      const endFormatted = formatDbTimeToLocal(endUtc.toISOString(), 'MM/DD/YYYY HH:mm:ss');
+
+      return `${startFormatted} - ${endFormatted}`;
+    } catch (error) {
+      console.error('Error parsing date in getPeriodRange:', error, { startDateStr, durationInSeconds });
+      // Fallback to basic string formatting
+      return `${startDateStr} - (Duration: ${durationDays} days)`;
+    }
   };
 
   if (loading) {

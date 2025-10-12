@@ -25,6 +25,7 @@ export const ProfileSettings: React.FC = () => {
                   year: "numeric",
                   month: "long",
                   day: "numeric",
+                  timeZone: "Asia/Shanghai"
                 })
               },
               {

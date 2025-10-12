@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PaymentChannelRepository, ChunkPaymentRepository, getDatabase, PAYMENT_CHANNEL_STATUS, ChunkPayment, ScheduledTaskLogRepository } from '@/lib/database';
 import { ccc, hexFrom, WitnessArgs } from "@ckb-ccc/core";
-import { buildClient, generateCkbSecp256k1Signature, createWitnessData } from "@/lib/ckb";
+import { buildClient, generateCkbSecp256k1Signature, createWitnessData, jsonStr } from "@/lib/ckb";
 
 export async function POST(request: NextRequest) {
   const startTime = new Date();
@@ -37,21 +37,27 @@ export async function POST(request: NextRequest) {
 
     let settledCount = 0;
     let checkedCount = 0;
-    const currentTime = new Date();
+    // Get current time in UTC for consistent comparison with database timestamps
+    const currentTimeUTC = new Date();
     const results = [];
 
     for (const channel of activeChannels) {
       try {
         checkedCount++;
         
-        // Calculate expiration time
-        const createdAt = new Date(channel.created_at);
-        const expirationTime = new Date(createdAt.getTime() + (channel.duration_days * 24 * 60 * 60 * 1000));
-        const timeUntilExpiration = expirationTime.getTime() - currentTime.getTime();
+        // Parse database timestamp as UTC (database stores UTC time)
+        const createdAtUTC = new Date(channel.created_at + (channel.created_at.includes('Z') ? '' : 'Z'));
+        const expirationTimeUTC = new Date(createdAtUTC.getTime() + (channel.duration_days * 24 * 60 * 60 * 1000));
+        const timeUntilExpiration = expirationTimeUTC.getTime() - currentTimeUTC.getTime();
         const minutesUntilExpiration = Math.floor(timeUntilExpiration / (1000 * 60));
-
+        console.log(minutesUntilExpiration,'minutes until expiration', {
+          currentTimeUTC: currentTimeUTC.toISOString(),
+          createdAtUTC: createdAtUTC.toISOString(),
+          expirationTimeUTC: expirationTimeUTC.toISOString(),
+          dbCreatedAt: channel.created_at
+        });
         // Check if channel expires within 15 minutes
-        if (minutesUntilExpiration <= 15 && minutesUntilExpiration > 0) {
+        if (minutesUntilExpiration <= 15 && minutesUntilExpiration >= 0) {
           console.log(`[AUTO-SETTLE] ⏰ Channel ${channel.channel_id} expires in ${minutesUntilExpiration} minutes, attempting settlement...`);
           
           const settlementResult = await settleChannelAutomatically(channel);
@@ -232,6 +238,12 @@ async function settleChannelAutomatically(channel: {
     // Submit the transaction to CKB network
     const client = buildClient("devnet");
     const txHash = await client.sendTransaction(transaction);
+
+    // Store the transaction data in settle_tx_data field
+    paymentChannelRepo.updatePaymentChannelSettleTxData(
+      channel.channel_id,
+      jsonStr(transaction)
+    );
 
     // Update channel status to SETTLED
     paymentChannelRepo.updatePaymentChannelStatus(

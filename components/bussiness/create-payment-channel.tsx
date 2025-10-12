@@ -7,6 +7,13 @@ import { useAuth } from "@/app/context/auth-context";
 import { createPaymentChannel, jsonStr } from "@/lib/ckb";
 import { channel } from "@/lib/api";
 import { PaymentSummary } from "@/components/bussiness/payment-summary";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Info } from "lucide-react";
 
 interface PaymentChannelData {
   channelId: string;
@@ -32,6 +39,7 @@ const amounts = [
 
 const durations = [
   { value: 30, label: "30s" },
+  { value: 120, label: "120s" },
   { value: 86400, label: "1 day" },
   { value: 259200, label: "3 days" },
   { value: 604800, label: "7 days" },
@@ -93,25 +101,50 @@ export const CreatePaymentChannel: React.FC<CreatePaymentChannelProps> = ({
   };
 
   return (
-    <div className="w-full max-w-none p-8">
-      <h3 className="mb-6 text-lg font-semibold">Recharge</h3>
+    <TooltipProvider>
+      <div className="w-full max-w-none p-8">
+        <h3 className="mb-6 text-lg font-semibold">Recharge</h3>
 
-      {/* Amount Selection */}
-      <SelectionGroup
-        title="Select Amount"
-        options={amounts}
-        selectedValue={selectedAmount}
-        onValueChange={setSelectedAmount}
-      />
+        {/* Amount Selection */}
+        <SelectionGroup
+          title="Select Amount"
+          options={amounts}
+          selectedValue={selectedAmount}
+          onValueChange={setSelectedAmount}
+        />
 
-      {/* Duration Selection */}
-      <SelectionGroup
-        title="Select Duration"
-        options={durations}
-        selectedValue={selectedDuration}
-        onValueChange={setSelectedDuration}
-        buttonClassName="min-w-[100px]"
-      />
+        {/* Duration Selection */}
+        <div className="mb-6">
+          <div className="mb-3 flex items-center gap-2">
+            <h4 className="text-sm font-medium text-slate-900 dark:text-slate-100">
+              Select Duration
+            </h4>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-300">
+                  <Info className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs" side="right">
+                <div className="space-y-2 text-sm">
+                  <div>
+                    <span className="font-medium">30s:</span> Go to admin panel and run <code className="rounded  px-1 text-xs">check-expired-channels</code> to reclaim deposit.
+                  </div>
+                  <div>
+                    <span className="font-medium">120s:</span> Make off-chain transaction, then run <code className="rounded  px-1 text-xs ">auto-settle-expiring</code> for auto-settlement.
+                  </div>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <SelectionGroup
+            title=""
+            options={durations}
+            selectedValue={selectedDuration}
+            onValueChange={setSelectedDuration}
+            buttonClassName="min-w-[100px]"
+          />
+        </div>
 
       {/* Create Payment Channel Button */}
       <div className="mb-8">
@@ -136,5 +169,6 @@ export const CreatePaymentChannel: React.FC<CreatePaymentChannelProps> = ({
         </Button>
       </div>
     </div>
-  );
+  </TooltipProvider>
+);
 };

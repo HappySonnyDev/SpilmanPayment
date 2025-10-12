@@ -17,6 +17,7 @@ export interface PaymentChannel {
   sellerSignature: string | null;
   refundTxData: string | null;
   fundingTxData: string | null;
+  settleTxData: string | null;
 }
 
 export const usePaymentChannels = () => {

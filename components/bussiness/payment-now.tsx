@@ -110,7 +110,16 @@ export const PaymentNow: React.FC<PaymentNowProps> = ({
           <div className="text-center text-sm text-slate-500 dark:text-slate-400">
             <p>Channel ID: {paymentData.channelId}</p>
             <p>Status: {paymentData.statusText}</p>
-            <p>Created: {new Date(paymentData.createdAt).toLocaleString()}</p>
+            <p>Created: {new Date(paymentData.createdAt).toLocaleString('en-US', {
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              hour12: false,
+              timeZone: 'Asia/Shanghai'
+            })}</p>
           </div>
         </div>
       </div>

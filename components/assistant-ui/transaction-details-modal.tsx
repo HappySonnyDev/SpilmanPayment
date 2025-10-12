@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { X, Loader2, Check } from "lucide-react";
 import { PaymentRecord } from "./payment-types";
+import { DataDisplay } from "@/components/bussiness/data-display";
 
 interface TransactionDetailsModalProps {
   selectedRecord: PaymentRecord | null;
@@ -45,30 +46,30 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Chunk ID</label>
-              <p className="text-sm font-mono bg-gray-100 dark:bg-gray-700 p-2 rounded">{selectedRecord.chunkId}</p>
+              <DataDisplay
+                title="Chunk ID"
+                data={selectedRecord.chunkId}
+                className="mb-0"
+              />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tokens Consumed</label>
-              <p className="text-sm bg-gray-100 dark:bg-gray-700 p-2 rounded">{selectedRecord.tokens} tokens</p>
+              <DataDisplay
+                title="Tokens Consumed"
+                data={`${selectedRecord.tokens} tokens`}
+                className="mb-0"
+              />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Payment Status</label>
-              <p className="text-sm bg-gray-100 dark:bg-gray-700 p-2 rounded">
-                {selectedRecord.isPaid === true && (
-                  <span className="inline-flex items-center text-gray-600 dark:text-gray-400">
-                    <Check className="h-4 w-4 mr-1" />
-                    Paid
-                  </span>
-                )}
-                {selectedRecord.isPaid === false && <span className="text-orange-600">Unpaid</span>}
-                {selectedRecord.isPaid === undefined && <span className="text-gray-500">Status unknown</span>}
-              </p>
+              <DataDisplay
+                title="Payment Status"
+                data={selectedRecord.isPaid === true ? "✓ Paid" : selectedRecord.isPaid === false ? "Unpaid" : "Status unknown"}
+                className="mb-0"
+              />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Timestamp</label>
-              <p className="text-sm bg-gray-100 dark:bg-gray-700 p-2 rounded">
-                {new Date(selectedRecord.timestamp).toLocaleString("en-US", {
+              <DataDisplay
+                title="Timestamp"
+                data={new Date(selectedRecord.timestamp).toLocaleString("en-US", {
                   year: "numeric",
                   month: "2-digit",
                   day: "2-digit",
@@ -77,17 +78,16 @@ export const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = (
                   second: "2-digit",
                   timeZoneName: "short",
                 })}
-              </p>
+                className="mb-0"
+              />
             </div>
           </div>
 
           {selectedRecord.transactionData && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Transaction Data</label>
-              <pre className="text-xs bg-gray-100 dark:bg-gray-700 p-3 rounded overflow-x-auto whitespace-pre-wrap">
-                {JSON.stringify(selectedRecord.transactionData, null, 2)}
-              </pre>
-            </div>
+            <DataDisplay
+              title="Transaction Data"
+              data={selectedRecord.transactionData}
+            />
           )}
 
           {/* Payment action buttons for unpaid chunks */}
