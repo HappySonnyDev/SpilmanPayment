@@ -6,7 +6,7 @@ A demonstration application showcasing Spilman unidirectional payment channels o
 
 ## 📋 Project Overview
 
-This is an innovative decentralized application (DApp) that demonstrates how to implement micropayments in AI conversation scenarios using CKB blockchain's Spilman payment channels. Users can create payment channels, chat with AI assistants, and make real-time payments for each data chunk received from AI responses.
+This is an innovative decentralized application (DApp) that demonstrates how to implement micropayments in AI conversation scenarios using CKB blockchain's Spilman payment channels. Users can create payment channels, chat with AI assistants, and make real-time payments for each data chunk received from AI responses, showcasing the characteristics of small amounts and high frequency transactions.
 
 ### Core Features
 
@@ -27,7 +27,6 @@ This is an innovative decentralized application (DApp) that demonstrates how to 
   - Radix UI - Accessible component library
   - Tailwind CSS 4.0 - Atomic CSS
   - Lucide React - Icon library
-  - Framer Motion - Animation library
 - **AI Assistant**: 
   - assistant-ui - AI conversation interface components
   - AI SDK - Streaming response handling
@@ -103,9 +102,9 @@ dapp_2/
 
 ### Requirements
 
-- Node.js 18.0 or higher
+- Node.js 22.19 or higher
 - pnpm (recommended) or npm/yarn
-- CKB Devnet node access
+- CKB Devnet environment (started with offckb) - see installation step 3
 
 ### Installation Steps
 
@@ -141,7 +140,6 @@ dapp_2/
    ```env
    # OpenAI API Configuration
    OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-   OPENAI_BASE_URL=https://api.openai.com/v1  # Optional, custom API endpoint
    
    # CKB Blockchain Configuration
    SELLER_PRIVATE_KEY=0xxxxxxxxxxxxx     # Seller (server-side) private key

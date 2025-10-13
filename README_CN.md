@@ -4,7 +4,7 @@
 
 ## 📋 项目概述
 
-这是一个创新的去中心化应用（DApp），展示了如何在 AI 对话场景中使用 CKB 区块链的 Spilman 支付通道实现微支付。用户可以创建支付通道，与 AI 助手对话，并在接收到 AI 响应的每个数据块（chunk）时进行实时支付。
+这是一个创新的去中心化应用（DApp），展示了如何在 AI 对话场景中使用 CKB 区块链的 Spilman 支付通道实现微支付。用户可以创建支付通道，与 AI 助手对话，并在接收到 AI 响应的每个数据块（chunk）时进行实时支付，体现其小额高频的特性。
 
 ### 核心特性
 
@@ -25,7 +25,6 @@
   - Radix UI - 无障碍组件库
   - Tailwind CSS 4.0 - 原子化 CSS
   - Lucide React - 图标库
-  - Framer Motion - 动画库
 - **AI 助手**: 
   - assistant-ui - AI 对话界面组件
   - AI SDK - 流式响应处理
@@ -99,9 +98,9 @@ dapp_2/
 
 ### 环境要求
 
-- Node.js 18.0 或更高版本
+- Node.js 22.19 或更高版本
 - pnpm (推荐) 或 npm/yarn
-- CKB Devnet 节点访问权限
+- CKB Devnet 环境（用 offckb 启动）参考安装步骤第三步
 
 ### 安装步骤
 
@@ -137,7 +136,6 @@ dapp_2/
    ```env
    # OpenAI API 配置
    OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-   OPENAI_BASE_URL=https://api.openai.com/v1  # 可选，自定义 API 端点
    
    # CKB 区块链配置
    CKB_NODE_URL=http://localhost:28114  # CKB Devnet 节点地址
