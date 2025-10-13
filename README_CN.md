@@ -140,7 +140,6 @@ dapp_2/
    # CKB 区块链配置
    CKB_NODE_URL=http://localhost:28114  # CKB Devnet 节点地址
    SELLER_PRIVATE_KEY=0xxxxxxxxxxxxx     # 卖方（服务端）私钥
-   SELLER_ADDRESS=ckt1xxxxxxxxxxxxxxxxx   # 卖方地址
    
    # JWT 密钥（用于认证）
    JWT_SECRET=your-secret-key-here

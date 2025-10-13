@@ -94,8 +94,15 @@ export class AuthService {
     return this.generateSellerAddress();
   }
 
-  // Get user's active payment channel
+  // Get user's active payment channel (prioritize default channel)
   getActivePaymentChannel(userId: number) {
+    // First try to get the user's default channel
+    const defaultChannel = this.channelRepo.getUserDefaultChannel(userId);
+    if (defaultChannel && defaultChannel.status === PAYMENT_CHANNEL_STATUS.ACTIVE) {
+      return defaultChannel;
+    }
+    
+    // Fallback to any active channel if no default is found
     const channels = this.channelRepo.getPaymentChannelsByUserId(userId);
     return channels.find(
       (channel) => channel.status === PAYMENT_CHANNEL_STATUS.ACTIVE,

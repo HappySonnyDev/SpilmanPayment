@@ -44,6 +44,12 @@ export const PaymentNow: React.FC<PaymentNowProps> = ({
             `Transaction Hash: ${result.txHash}\n` +
             `Channel Status: ${result.channelStatus}`,
         );
+        
+        // Emit event to notify AuthContext that a channel was activated
+        const channelActivatedEvent = new CustomEvent('channelActivated', {
+          detail: { channelId: paymentData.channelId }
+        });
+        window.dispatchEvent(channelActivatedEvent);
 
         onPaymentComplete();
       } else {

@@ -27,6 +27,7 @@ interface AuthContextType {
   loginWithWallet: (privateKey: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshCkbAddress: () => Promise<void>;
+  refreshUser: () => Promise<void>; // Add method to refresh user data
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -102,6 +103,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Refresh user data from server (useful when payment channels change)
+  const refreshUser = async () => {
+    if (!privateKey) return;
+    
+    try {
+      const userData = await getCurrentUser();
+      if (userData) {
+        setUser(userData);
+      }
+    } catch (error) {
+      console.error('Error refreshing user data:', error);
+    }
+  };
+
+  // Listen for default channel changes and refresh user data
+  useEffect(() => {
+    const handleDefaultChannelChanged = () => {
+      console.log('🔄 AuthContext: Default channel changed, refreshing user data');
+      refreshUser();
+    };
+
+    const handleChannelActivated = () => {
+      console.log('🔄 AuthContext: Payment channel activated, refreshing user data');
+      refreshUser();
+    };
+
+    window.addEventListener('defaultChannelChanged', handleDefaultChannelChanged);
+    window.addEventListener('channelActivated', handleChannelActivated);
+    
+    return () => {
+      window.removeEventListener('defaultChannelChanged', handleDefaultChannelChanged);
+      window.removeEventListener('channelActivated', handleChannelActivated);
+    };
+  }, [refreshUser]);
+
   const loginWithWallet = async (privateKey: string) => {
     // Process private key locally and authenticate with server using derived public key
     const userData = await loginWithWalletAPI(privateKey);
@@ -142,6 +178,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loginWithWallet,
     logout,
     refreshCkbAddress,
+    refreshUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -81,6 +81,12 @@ export const PaymentChannelSettings: React.FC = () => {
 
         // Refresh the channels list to show updated status
         await refetch();
+        
+        // Emit event to notify AuthContext that a channel was activated
+        const channelActivatedEvent = new CustomEvent('channelActivated', {
+          detail: { channelId: channel.channelId }
+        });
+        window.dispatchEvent(channelActivatedEvent);
       } else {
         alert(result.error);
       }
