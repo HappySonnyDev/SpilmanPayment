@@ -19,6 +19,7 @@ import {
 interface ChunkAwareComposerProps {
   onAuthRequired: () => void;
   onNewQuestion: () => string;
+  onOpenSettings: (tab: 'recharge') => void; // Add callback to open settings
 }
 
 interface PaymentChannel {
@@ -40,7 +41,8 @@ interface PaymentChannel {
 
 export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
   onAuthRequired,
-  onNewQuestion
+  onNewQuestion,
+  onOpenSettings
 }) => {
   const { user } = useAuth();
   const composerRuntime = useComposerRuntime();
@@ -429,6 +431,13 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
       return false;
     }
     
+    // Check if user has a default payment channel
+    if (!user.active_channel) {
+      console.log('❌ No default payment channel found - opening recharge settings');
+      onOpenSettings('recharge');
+      return false; // Prevent sending until user sets up a payment channel
+    }
+    
     console.log('🔍 Pre-send validation - isDataLoading:', isDataLoading, 'paymentRecords.length:', paymentRecords.length);
     
     // Always fetch the latest chunk status to ensure we have current data
@@ -471,7 +480,7 @@ export const ChunkAwareComposer: React.FC<ChunkAwareComposerProps> = ({
     const sessionId = onNewQuestion();
     console.log('✅ Pre-send validation passed - new session ID:', sessionId);
     return true; // Allow sending
-  }, [user, onAuthRequired, onNewQuestion, isDataLoading, paymentRecords]);
+  }, [user, onAuthRequired, onOpenSettings, onNewQuestion, isDataLoading, paymentRecords]);
   
   // Custom send handler with payment validation
   const handleSend = useCallback(async () => {

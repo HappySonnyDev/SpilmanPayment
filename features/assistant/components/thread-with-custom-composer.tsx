@@ -36,6 +36,7 @@ interface ThreadWithCustomComposerProps {
   pendingMessage: string;
   setPendingMessage: (message: string) => void;
   onNewQuestion: () => string;
+  onOpenSettings: (tab: 'recharge') => void; // Add callback to open settings
 }
 
 const ThreadScrollToBottom: React.FC = () => {
@@ -129,6 +130,7 @@ export const ThreadWithCustomComposer: FC<ThreadWithCustomComposerProps> = ({
   onAuthRequired,
   setPendingMessage,
   onNewQuestion,
+  onOpenSettings,
 }) => {
   return (
     <LazyMotion features={domAnimation}>
@@ -163,6 +165,7 @@ export const ThreadWithCustomComposer: FC<ThreadWithCustomComposerProps> = ({
               <ChunkAwareComposer 
                 onAuthRequired={onAuthRequired}
                 onNewQuestion={onNewQuestion}
+                onOpenSettings={onOpenSettings}
               />
             </div>
           </ThreadPrimitive.Viewport>

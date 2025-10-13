@@ -133,6 +133,7 @@ export const Assistant = () => {
                   pendingMessage={pendingMessage}
                   setPendingMessage={setPendingMessage}
                   onNewQuestion={generateNewSessionId}
+                  onOpenSettings={handleUserMenuClick}
                 />
               </div>
             </SidebarInset>
