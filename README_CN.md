@@ -154,8 +154,6 @@ dapp_2/                           # Monorepo 根目录
 2. **安装依赖**
    ```bash
    pnpm install
-   # 或
-   npm install
    ```
 
 3. **启动 CKB Devnet 节点**
@@ -173,7 +171,7 @@ dapp_2/                           # Monorepo 根目录
 
 4. **配置环境变量**
    
-   创建 `.env.local` 文件：
+   在 packages/webapp 下创建 `.env.local` 文件：
    ```env
    # OpenRouter API 配置
    OPENROUTER_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -186,20 +184,35 @@ dapp_2/                           # Monorepo 根目录
    
 5. **初始化数据库**
    
-   首次运行时，数据库会自动创建。如需清空数据：
-   ```bash
-   # 清空支付通道数据
-   pnpm run clear-channels
+   首次运行时，数据库会自动创建。
+
    
-   # 清空所有数据表
-   pnpm run clear-tables
-   ```
+   > **Apple Silicon (M1/M2/M3/M4) 用户使用 Node.js 22+ 时的注意事项**:
+   > 
+   > 如果遇到 better-sqlite3 的 "Could not locate the bindings file" 错误，需要从源码重新编译：
+   > 
+   > ```bash
+   > # 进入 better-sqlite3 包目录
+   > cd node_modules/.pnpm/better-sqlite3@12.4.1/node_modules/better-sqlite3
+   > 
+   > # 确保构建工具可用
+   > xcode-select --install || true
+   > python3 --version
+   > 
+   > # 从源码重新编译
+   > npm_config_python="$(command -v python3)" \
+   > npm_config_build_from_source=true \
+   > npx node-gyp rebuild
+   > 
+   > # 返回项目根目录
+   > cd -
+   > ```
+   > 
+   > 此问题是因为 Node.js 22 + ARM64 组合没有预编译的二进制文件可用。
 
 6. **启动开发服务器**
    ```bash
    pnpm dev
-   # 或者只启动 webapp
-   pnpm --filter webapp dev
    ```
    
    **额外命令**：

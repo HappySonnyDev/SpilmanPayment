@@ -14,9 +14,7 @@
     "test": "pnpm -r test",
     "test:contracts": "pnpm --filter contracts test",
     "deploy:contracts": "pnpm --filter contracts deploy",
-    "clear-tables": "node packages/webapp/scripts/clear-database-tables.js",
-    "cron-auto-settle": "node packages/webapp/scripts/cron-auto-settle.js",
-    "cron-scheduler": "node packages/webapp/scripts/cron-scheduler.js"
+    "clear-tables": "node packages/webapp/scripts/clear-database-tables.js"
   },
   "prettier": {
     "plugins": [

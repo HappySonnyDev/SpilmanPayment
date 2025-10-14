@@ -177,9 +177,9 @@ dapp_2/                           # Monorepo root
 
 4. **Configure environment variables**
    
-   Create `.env.local` file:
+   Create `.env.local` file in packages/webapp directory:
    ```env
-   # OpenAI API Configuration
+   # OpenRouter Configuration
    OPENROUTER_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
    
    # CKB Blockchain Configuration
@@ -191,20 +191,35 @@ dapp_2/                           # Monorepo root
 
 5. **Initialize database**
    
-   The database will be created automatically on first run. To clear data:
-   ```bash
-   # Clear payment channel data
-   pnpm run clear-channels
+   The database will be created automatically on first run. 
    
-   # Clear all database tables
-   pnpm run clear-tables
-   ```
+   > **Note for Apple Silicon (M1/M2/M3/M4) users with Node.js 22+**:
+   > 
+   > If you encounter the error "Could not locate the bindings file" for better-sqlite3, you need to rebuild it from source:
+   > 
+   > ```bash
+   > # Navigate to better-sqlite3 package directory
+   > cd node_modules/.pnpm/better-sqlite3@12.4.1/node_modules/better-sqlite3
+   > 
+   > # Ensure build tools are available
+   > xcode-select --install || true
+   > python3 --version
+   > 
+   > # Rebuild from source
+   > npm_config_python="$(command -v python3)" \
+   > npm_config_build_from_source=true \
+   > npx node-gyp rebuild
+   > 
+   > # Return to project root
+   > cd -
+   > ```
+   > 
+   > This issue occurs because prebuilt binaries are not available for the Node.js 22 + ARM64 combination.
 
 6. **Start development server**
    ```bash
    pnpm dev
-   # or start webapp only
-   pnpm --filter webapp dev
+   
    ```
    
    **Additional commands**:
