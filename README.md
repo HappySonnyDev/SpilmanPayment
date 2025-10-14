@@ -139,7 +139,7 @@ dapp_2/
    Create `.env.local` file:
    ```env
    # OpenAI API Configuration
-   OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   OPENROUTER_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
    
    # CKB Blockchain Configuration
    SELLER_PRIVATE_KEY=0xxxxxxxxxxxxx     # Seller (server-side) private key

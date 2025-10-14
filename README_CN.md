@@ -134,11 +134,10 @@ dapp_2/
    
    创建 `.env.local` 文件：
    ```env
-   # OpenAI API 配置
-   OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   # OpenRouter API 配置
+   OPENROUTER_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
    
    # CKB 区块链配置
-   CKB_NODE_URL=http://localhost:28114  # CKB Devnet 节点地址
    SELLER_PRIVATE_KEY=0xxxxxxxxxxxxx     # 卖方（服务端）私钥
    
    # JWT 密钥（用于认证）
