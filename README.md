@@ -4,6 +4,45 @@
 
 A demonstration application showcasing Spilman unidirectional payment channels on CKB (Nervos) blockchain, integrated with AI chat assistant for real-time chunk-level micropayments.
 
+## 🏛️ Monorepo Architecture
+
+This project is organized as a **pnpm workspace monorepo** with the following packages:
+
+```
+dapp_2/
+├── packages/
+│   ├── webapp/              # Next.js web application
+│   ├── contracts/           # CKB smart contracts (2of2 multi-sig)
+│   └── shared/              # Shared utilities and types
+├── pnpm-workspace.yaml      # Workspace configuration
+├── package.json             # Root package with workspace scripts
+└── tsconfig.json            # Root TypeScript configuration
+```
+
+### Package Overview
+
+- **`packages/webapp`**: Next.js-based web application with AI chat and payment channel UI
+- **`packages/contracts`**: CKB JavaScript smart contracts for 2-of-2 multi-signature payment channels
+- **`packages/shared`**: Shared TypeScript utilities and type definitions used across packages
+
+### Workspace Commands
+
+```bash
+# Run commands in all packages
+pnpm -r <command>
+
+# Run commands in specific package
+pnpm --filter webapp <command>
+pnpm --filter contracts <command>
+pnpm --filter shared <command>
+
+# Examples:
+pnpm --filter webapp dev          # Start webapp dev server
+pnpm --filter contracts build     # Build contracts
+pnpm --filter contracts test      # Run contract tests
+pnpm build                        # Build all packages
+```
+
 ## 📋 Project Overview
 
 This is an innovative decentralized application (DApp) that demonstrates how to implement micropayments in AI conversation scenarios using CKB blockchain's Spilman payment channels. Users can create payment channels, chat with AI assistants, and make real-time payments for each data chunk received from AI responses, showcasing the characteristics of small amounts and high frequency transactions.
@@ -48,54 +87,56 @@ This is an innovative decentralized application (DApp) that demonstrates how to 
 
 ## 📁 Project Structure
 
+### Monorepo Layout
+
 ```
-dapp_2/
-├── app/                          # Next.js App Router
-│   ├── admin/                    # Admin dashboard
-│   │   ├── channels/            # Payment channel management
-│   │   ├── tasks/               # Scheduled task management
-│   │   └── users/               # User management
-│   ├── api/                     # API routes
-│   │   ├── admin/               # Admin APIs
-│   │   ├── auth/                # Authentication APIs
-│   │   ├── channel/             # Payment channel APIs
-│   │   ├── chat/                # AI chat APIs
-│   │   └── chunks/              # Chunk-level payment APIs
-│   ├── assistant.tsx            # AI assistant main page
-│   └── page.tsx                 # Home page
-├── components/                   # Reusable components
-│   ├── shared/                  # Shared business components
-│   └── ui/                      # UI base components
-├── features/                     # Feature modules
-│   ├── admin/                   # Admin features
-│   ├── assistant/               # AI assistant features
-│   │   ├── components/          # Assistant components
-│   │   └── hooks/               # Assistant hooks
-│   ├── auth/                    # Authentication features
-│   ├── payment/                 # Payment features
-│   │   ├── components/          # Payment components
-│   │   └── hooks/               # Payment hooks
-│   └── settings/                # Settings features
-├── lib/                         # Utility libraries
-│   ├── client/                  # Client-side utilities
-│   │   ├── api.ts              # API client
-│   │   ├── auth-client.ts      # Auth client
-│   │   └── chunk-payment-integration.ts
-│   ├── server/                  # Server-side utilities
-│   │   ├── database.ts         # Database operations
-│   │   ├── auth.ts             # Server auth
-│   │   └── cron-manager.ts     # Scheduled task management
-│   └── shared/                  # Shared utilities
-│       ├── ckb.ts              # CKB blockchain utilities
-│       ├── date-utils.ts       # Date utilities
-│       └── utils.ts            # General utilities
-├── scripts/                     # Script files
-│   ├── clear-payment-channels.js
-│   ├── clear-database-tables.js
-│   ├── cron-auto-settle.js
-│   └── cron-scheduler.js
-└── deployment/                  # Deployment configs
-    └── devnet/                 # Devnet configs
+dapp_2/                           # Monorepo root
+├── packages/
+│   ├── webapp/                   # Next.js web application
+│   │   ├── app/                  # Next.js App Router
+│   │   │   ├── admin/           # Admin dashboard
+│   │   │   │   ├── channels/    # Payment channel management
+│   │   │   │   ├── tasks/       # Scheduled task management
+│   │   │   │   └── users/       # User management
+│   │   │   ├── api/             # API routes
+│   │   │   │   ├── admin/       # Admin APIs
+│   │   │   │   ├── auth/        # Authentication APIs
+│   │   │   │   ├── channel/     # Payment channel APIs
+│   │   │   │   ├── chat/        # AI chat APIs
+│   │   │   │   └── chunks/      # Chunk-level payment APIs
+│   │   │   ├── assistant.tsx    # AI assistant main page
+│   │   │   └── page.tsx         # Home page
+│   │   ├── components/          # Reusable components
+│   │   │   ├── shared/          # Shared business components
+│   │   │   └── ui/              # UI base components
+│   │   ├── features/            # Feature modules
+│   │   │   ├── admin/           # Admin features
+│   │   │   ├── assistant/       # AI assistant features
+│   │   │   ├── auth/            # Authentication features
+│   │   │   ├── payment/         # Payment features
+│   │   │   └── settings/        # Settings features
+│   │   ├── lib/                 # Utility libraries
+│   │   │   ├── client/          # Client-side utilities
+│   │   │   ├── server/          # Server-side utilities
+│   │   │   └── shared/          # Shared utilities
+│   │   ├── scripts/             # Script files
+│   │   └── package.json         # Webapp dependencies
+│   ├── contracts/               # CKB Smart Contracts
+│   │   ├── contracts/2of2/      # 2-of-2 multi-sig contract
+│   │   │   └── src/index.ts     # Contract source code
+│   │   ├── tests/               # Contract tests
+│   │   ├── scripts/             # Build and deploy scripts
+│   │   ├── deployment/          # Deployment configurations
+│   │   └── package.json         # Contract dependencies
+│   └── shared/                  # Shared Package
+│       ├── src/
+│       │   ├── types.ts         # Shared type definitions
+│       │   ├── utils.ts         # Shared utility functions
+│       │   └── index.ts         # Package exports
+│       └── package.json         # Shared dependencies
+├── pnpm-workspace.yaml          # Workspace configuration
+├── package.json                 # Root package (workspace scripts)
+└── tsconfig.json                # Root TypeScript config
 ```
 
 ## 🚀 Quick Start
@@ -162,6 +203,23 @@ dapp_2/
 6. **Start development server**
    ```bash
    pnpm dev
+   # or start webapp only
+   pnpm --filter webapp dev
+   ```
+   
+   **Additional commands**:
+   ```bash
+   # Build all packages
+   pnpm build
+   
+   # Build contracts only
+   pnpm build:contracts
+   
+   # Test contracts
+   pnpm test:contracts
+   
+   # Deploy contracts to devnet
+   pnpm deploy:contracts
    ```
 
 7. **Access the application**

@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+/packages/*/node_modules
 /.pnp
 .pnp.*
 .yarn/*
@@ -16,7 +17,9 @@
 # next.js
 /.next/
 /out/
-
+/packages/webapp/.next/
+/packages/webapp/out/
+node_modules
 # production
 /build
 
@@ -32,6 +35,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+packages/*/.env.local
+packages/*/.env
 
 # vercel
 .vercel
@@ -39,6 +45,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+/packages/*/dist
+/packages/*/build
 
 # database files
 *.sqlite
@@ -48,11 +56,13 @@ next-env.d.ts
 *.sqlite-wal
 *.db-shm
 *.db-wal
-# SQLite database files
-database.sqlite
-database.sqlite3
-database.sqlite-shm
-database.sqlite-wal
-database.db
+# SQLite database files in webapp
+packages/webapp/database.sqlite
+packages/webapp/database.sqlite3
+packages/webapp/database.sqlite-shm
+packages/webapp/database.sqlite-wal
+packages/webapp/database.db
 
-test2/
+# contracts build output
+/packages/contracts/dist/
+/packages/contracts/*.bc
